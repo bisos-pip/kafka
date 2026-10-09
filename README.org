@@ -1,172 +1,192 @@
-#+title: bisos.airflow: Apache Airflow platform management via BISOS Capability Bundles
-#+DATE: <2026-08-11 Tue>
+#+title: bisos.kafka: Apache Kafka and Kafbat UI via BISOS Capability Bundles
+#+DATE: <2026-10-09 Fri>
 #+AUTHOR: Mohsen BANAN
 #+OPTIONS: toc:4
 
-#+BEGIN: b:org:pypi:readme/topControls :pkgName "airflow" :comment "basic"
+#+BEGIN: b:org:pypi:readme/topControls :pkgName "kafka" :comment "basic"
 
 |----------------------+------------------------------------------------------------------|
 | ~Blee Panel Controls~: | [[elisp:(show-all)][Show-All]] : [[elisp:(org-shifttab)][Overview]] : [[elisp:(progn (org-shifttab) (org-content))][Content]] : [[elisp:(delete-other-windows)][(1)]] : [[elisp:(progn (save-buffer) (kill-buffer))][S&Q]] : [[elisp:(save-buffer)][Save]]  : [[elisp:(kill-buffer)][Quit]]  : [[elisp:(bury-buffer)][Bury]] |
-| ~Panel Links~:         | [[file:./py3/panels/bisos.airflow/_nodeBase_/fullUsagePanel-en.org][Repo Blee Panel]] --  [[file:/bisos/git/auth/bxRepos/bisos-pip/airflow/py3/panels/bisos.airflow/_nodeBase_/fullUsagePanel-en.org][Blee Panel]]                                   |
-| ~See Also~:            | [[https://pypi.org/project/bisos.airflow][At PYPI]] : [[https://github.com/bisos-pip/pycs][bisos.PyCS]]                                             |
+| ~Panel Links~:         | [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org][Repo Blee Panel]] --  [[file:/bisos/git/auth/bxRepos/bisos-pip/kafka/py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org][Blee Panel]]                                   |
+| ~See Also~:            | [[https://pypi.org/project/bisos.kafka][At PYPI]] : [[https://github.com/bisos-pip/pycs][bisos.PyCS]]                                             |
 |----------------------+------------------------------------------------------------------|
 
 #+END:
 
 * Overview
 
-/bisos.airflow/ is a BISOS package for managing an Apache Airflow platform ---
-webserver (API server), scheduler, triggerer, metadata database, and DAG
-development/testing --- as a BISOS Capability Bundle (CBS/CBM) of
-=systemd=-planted Command Services.
+/bisos.kafka/ is a BISOS package for running Apache Kafka on a BISOS host ---
+a single-node broker in KRaft mode (no ZooKeeper), together with
+[[https://github.com/kafbat/kafka-ui][Kafbat UI]] as its web UI --- as a BISOS
+Capability Bundle (CBS/CBM) of =systemd=-planted Command Services.
 
-With CBM (Capability Bundle Materialization), Airflow's four processes are
-installed as independent host =systemd= units rather than one monolithic
-=airflow standalone= process: a planted pointer leaf
-(=cbmProc.spcs=) subprocess-invokes a Capability Bundle Specification
-(=airflow-cbs.pcs=) which declares package installation (sbom), the four
-=systemd= units, and the assembly step needed to bring up a working
-=airflow.here= installation on a single host. This gives independent
-start/stop/status and independent logs per role, without the operational
-overhead of a distributed executor (Celery/Kubernetes) or containers.
+A planted pointer leaf (=cbmProc.spcs=, at
+=sys/cbm/collective/hereWeb/kafka/=) subprocess-invokes a Capability Bundle
+Specification (=kafka-cbs.pcs=). The CBS declares package installation (sbom),
+the two =systemd= units (=kafka= and =kafbat-ui=), and the assembly step that
+makes Kafbat UI browsable as =http://kafka.here=.
 
-#+BEGIN: b:org:pypi:readme/pkgDocumentation :pkgName "airflow-cs" :comment "basic"
+Debian packages neither Kafka nor Kafbat UI. The sbom therefore takes only the
+JRE from apt, and fetches the Apache Kafka binary tarball and the Kafbat UI jar
+from upstream at pinned versions, refusing either one if its checksum does not
+match.
+
+#+BEGIN: b:org:pypi:readme/pkgDocumentation :pkgName "kafka-cs" :comment "basic"
 
 # PYPI Documentation Comes Here in _description.org
 #+END:
 
-* Capability Materialization
-
-The figure below shows the top-down layering of =airflow.here='s Capability
-Materialization: the planted CBM pointer leaf
-(=/bisos/platform/sys/cbm/collective/hereWeb/airflow/cbmProc.spcs=) points to
-(and does *not* duplicate) the CBS (=py3/bin/airflow-cbs.pcs=), which declares
-the bundle of =airflow-sbom.pcs=, the 4 =airflow-*-sysd.pcs= units, and
-=airflow-assemble.cs=. =py3/bin/airflowAdmin.cs= sits below all of that as the
-day-to-day admin-facing CS an operator runs against the materialized
-installation.
-
-[[file:py3/images/airflowCapabilityMaterialization.png]]
-
-*Regenerate this figure* (after editing =py3/images/airflow-graphviz.pcs=):
-
-: cd py3/images
-: ./airflow-graphviz.pcs --format=all -i ngProcess all
-
 * Table of Contents     :TOC:
 - [[#overview][Overview]]
-- [[#capability-materialization][Capability Materialization]]
-- [[#the-4-systemd-units-and-db-init][The 4 systemd Units and DB Init]]
+- [[#what-gets-installed-and-where][What Gets Installed, and Where]]
+- [[#the-2-systemd-units][The 2 systemd Units]]
+- [[#listeners-and-ports][Listeners and Ports]]
 - [[#installation][Installation]]
   - [[#installation-with-pip][Installation With pip]]
   - [[#installation-with-pipx][Installation With pipx]]
 - [[#usage][Usage]]
-  - [[#day-to-day-admin-airflowadmincs][Day-to-Day Admin: =airflowAdmin.cs=]]
-  - [[#direct-airflow-cli-cheat-sheet-quickairflowcs][Direct Airflow CLI Cheat Sheet: =quickAirflow.cs=]]
+  - [[#materialization][Materialization]]
+  - [[#day-to-day-admin-kafkaadmincs][Day-to-Day Admin: =kafkaAdmin.cs=]]
+  - [[#direct-kafka-cli-cheat-sheet-quickkafkacs][Direct Kafka CLI Cheat Sheet: =quickKafka.cs=]]
 - [[#key-files][Key Files]]
 - [[#part-of-bisos--bystar-internet-services-operating-system][Part of BISOS — ByStar Internet Services Operating System]]
 - [[#documentation-and-blee-panels][Documentation and Blee-Panels]]
 - [[#support][Support]]
+- [[#planned-improvements][Planned Improvements]]
 
-* The 4 systemd Units and DB Init
+* What Gets Installed, and Where
 
-Four planted =*-sysd.pcs= units live in =py3/bin/=, all delegating to the same
-=airflow= CLI executable, each running a different sub-command:
+Every fact below lives in one place, =py3/bisos/kafka/kafkaInfo.py=, which the
+sbom, the units, the dns and vhost files and the admin CS all read.
 
-| Unit                          | Airflow role                  | =ExecStart= sub-command         | Type                       | Ordering                            |
-|-------------------------------+--------------------------------+----------------------------------+----------------------------+--------------------------------------|
-| =airflow-db-sysd.pcs=          | DB migration                  | =airflow db migrate=             | =oneshot=, =RemainAfterExit=yes= | =After=network.target=; runs first  |
-| =airflow-webserver-sysd.pcs=   | API/Web server                | =airflow api-server --port ...=  | long-running =simple=       | =Requires=/=After=airflow-db.service= |
-| =airflow-scheduler-sysd.pcs=   | Scheduler                     | =airflow scheduler=              | long-running =simple=       | =Requires=/=After=airflow-db.service= |
-| =airflow-triggerer-sysd.pcs=   | Triggerer (deferrable tasks)  | =airflow triggerer=              | long-running =simple=       | =Requires=/=After=airflow-db.service= |
+| What                        | Where                                     | Owner          |
+|-----------------------------+-------------------------------------------+----------------|
+| JRE (=openjdk-21-jre-headless=) | apt                                   | root           |
+| Kafka 4.3.1 (Scala 2.13)    | =/opt/kafka/kafka_2.13-4.3.1=             | root           |
+| Active Kafka version        | =/opt/kafka/current= -> the above         | root           |
+| Kafbat UI 1.5.0             | =/opt/kafka/kafbat/api-v1.5.0.jar=        | root           |
+| Broker config               | =/etc/kafka/server.properties=            | root:kafka 640 |
+| Broker environment          | =/etc/default/kafka=                      | root:kafka 640 |
+| Kafbat UI environment       | =/etc/default/kafbat-ui=                  | root:kafka 640 |
+| KRaft metadata + partitions | =/var/lib/kafka/data=                     | kafka          |
+| Application logs            | =/var/log/kafka=                          | kafka          |
 
-=airflow-db-sysd.pcs= is a =oneshot= unit with =RemainAfterExit=yes=: it runs
-=airflow db migrate= once to bring the metadata database schema up to date,
-then reports itself "active" without staying resident. The three long-running
-units each declare =Requires=/=After=airflow-db.service=, so systemd
-guarantees the migration has been attempted before any of the three service
-processes starts.
+The three config files are written only when absent, so hand overrides survive
+re-runs of the sbom. =kafkaAdmin.cs -i driftCheck= reports how a live file
+differs from what its generator would write.
 
-All four units, together with package installation, are declared by
-=py3/bin/airflow-cbs.pcs= and materialized at this host via
-=py3/bin/cbmProc-airflow.spcs=.
+Storage is formatted (=kafka-storage.sh format --standalone=) only when
+=/var/lib/kafka/data/meta.properties= is absent. Formatting a used data
+directory again would mint a new cluster id and orphan every topic.
+
+* The 2 systemd Units
+
+| Unit                 | Runs                                         | Ordering                                  |
+|----------------------+----------------------------------------------+-------------------------------------------|
+| =kafka-sysd.pcs=     | =kafka-server-start.sh /etc/kafka/server.properties= --- broker and KRaft controller in one process | =After=network.target=                    |
+| =kafbat-ui-sysd.pcs= | =java -jar api-v1.5.0.jar=, configured by =/etc/default/kafbat-ui= | =After=/=Wants=kafka.service=              |
+
+Both run as =User=kafka=. Kafbat UI uses =Wants== rather than =Requires==, so
+it stays up, showing the cluster as offline, while =kafka.service= restarts.
+
+* Listeners and Ports
+
+Ports are assigned in =bisos.banna= (=tcpPorts.py=), never hardcoded. Every
+listener binds loopback only: the broker serves this host's tenants, and
+Kafbat UI has no authentication.
+
+| Listener               | Address           | banna name        |
+|------------------------+-------------------+-------------------|
+| Broker (PLAINTEXT)     | =127.0.0.1:24007= | =kafka=           |
+| KRaft controller       | =127.0.0.1:24008= | =kafkaController= |
+| Kafbat UI              | =127.0.0.1:24009= | =kafbatUi=        |
+| Kafbat UI, via nginx   | =http://kafka.here= | ---             |
+
+Clients use =bootstrap.servers=127.0.0.1:24007=.
 
 * Installation
 
-The sources for the bisos.airflow pip package are maintained at:\\
-https://github.com/bisos-pip/airflow
+The sources for the bisos.kafka pip package are maintained at:\\
+https://github.com/bisos-pip/kafka
 
-The bisos.airflow pip package is available at PYPI as\\
-https://pypi.org/project/bisos.airflow
+The bisos.kafka pip package is available at PYPI as\\
+https://pypi.org/project/bisos.kafka
 
-You can install bisos.airflow with pip or pipx.
+You can install bisos.kafka with pip or pipx.
 
 ** Installation With pip
 
-If you need access to bisos.airflow as a python module, install it with pip:
+If you need access to bisos.kafka as a python module, install it with pip:
 
 #+begin_src bash
-pip install bisos.airflow
+pip install bisos.kafka
 #+end_src
 
 ** Installation With pipx
 
-If you only need access to bisos.airflow on the command line, install it with pipx:
+If you only need access to bisos.kafka on the command line, install it with pipx:
 
 #+begin_src bash
-pipx install bisos.airflow
+pipx install bisos.kafka
 #+end_src
 
 The following commands are made available:
 
-- =airflowAdmin.cs= --- day-to-day admin CS for this host's =airflow.here= installation.
-- =quickAirflow.cs= --- direct-command cheat sheet for the =airflow= CLI and its =systemd= units.
-- =airflow-cbs.pcs= --- Capability Bundle Specification: declares sbom + the 4 sysd units + assemble.
-- =cbmProc-airflow.spcs= --- planted CBM pointer that materializes the CBS at this host.
-- =airflow-sbom.pcs= --- package installation via [[https://github.com/bisos-pip/sbom][bisos.sbom]].
-- =airflow-db-sysd.pcs=, =airflow-webserver-sysd.pcs=, =airflow-scheduler-sysd.pcs=, =airflow-triggerer-sysd.pcs= --- the 4 systemd units.
-- =airflow-assemble.cs= --- assembly/glue step.
-- =airflow-here-dns.pcs= --- registers the =.here= fake-domain DNS entry (=airflow.here=).
+- =kafkaAdmin.cs= --- day-to-day admin CS for this host's =kafka.here= installation.
+- =quickKafka.cs= --- direct-command cheat sheet for the Kafka CLI tools and the two =systemd= units.
+- =kafka-assemble.cs= --- assembly step: =kafka.here= dns entry and nginx vhost.
+- =cbmProc-kafka.spcs= --- planted CBM pointer that materializes the CBS at this host.
+
+The planted =.pcs= files (=kafka-cbs.pcs=, =kafka-sbom.pcs=, =kafka-sysd.pcs=,
+=kafbat-ui-sysd.pcs=, =kafka-here-dns.pcs=, =kafka-wvd.pcs=) are invoked
+directly from =py3/bin/=.
 
 * Usage
 
-** Day-to-Day Admin: =airflowAdmin.cs=
+** Materialization
+
+#+begin_src bash
+kafka-sbom.pcs -i sbom_fullUpdate                    # install only
+kafka-cbs.pcs -i cbs_materialize                     # sbom + units + assemble
+cbmProc-kafka.spcs -i cbm_enable                     # at the planted CBM leaf, then:
+cbmProc-kafka.spcs -i cbm_materialize
+#+end_src
+
+** Day-to-Day Admin: =kafkaAdmin.cs=
 
 Run with no arguments (or =-i examples=) to see the full menu. Key
 sub-commands:
 
 #+begin_src bash
-airflowAdmin.cs -i hostInfo       # fqdn, port, AIRFLOW_HOME, DAG dir, log dir
-airflowAdmin.cs -i servicesInfo   # links for operating the 4 systemd units
-airflowAdmin.cs -i usersInfo      # list/create users; default admin/password
-airflowAdmin.cs -i fullUpdate     # all three together
+kafkaAdmin.cs -i hostInfo             # fqdn, listeners, install/config/data/log paths
+kafkaAdmin.cs -i servicesInfo         # links for operating the 2 systemd units
+kafkaAdmin.cs -i topicsInfo           # create, list, describe, produce, consume
+kafkaAdmin.cs -i consumerGroupsInfo   # list, lag, reset offsets
+kafkaAdmin.cs -i driftCheck           # read-only: live config and units vs kafkaInfo
+kafkaAdmin.cs -i fullUpdate           # the four info Cmnds together
 #+end_src
 
-** Direct Airflow CLI Cheat Sheet: =quickAirflow.cs=
+** Direct Kafka CLI Cheat Sheet: =quickKafka.cs=
 
-For direct =airflow= CLI / =systemctl= / =journalctl= invocations (not routed
-through =airflowAdmin.cs=), run:
+For direct =kafka-*.sh= / =systemctl= / =journalctl= invocations, and hints for
+reading Kafbat UI, run:
 
 #+begin_src bash
-quickAirflow.cs
+quickKafka.cs
 #+end_src
 
 * Key Files
 
-An overview of the relevant files of the bisos.airflow package (starting-point;
-to be expanded as the package develops):
-
-- =py3/bin/airflowAdmin.cs= --- day-to-day admin CS (hostInfo, servicesInfo, usersInfo, fullUpdate).
-- =py3/bin/quickAirflow.cs= --- direct-command cheat sheet for the =airflow= CLI and systemd units.
-- =py3/bin/airflow-cbs.pcs= --- CBS declaring the bundle (sbom + 4 sysd units + assemble).
-- =py3/bin/cbmProc-airflow.spcs= --- planted CBM pointer leaf that materializes the CBS.
-- =py3/bin/airflow-sbom.pcs= --- package installation via [[https://github.com/bisos-pip/sbom][bisos.sbom]].
-- =py3/bin/airflow-db-sysd.pcs= --- oneshot DB migration unit.
-- =py3/bin/airflow-webserver-sysd.pcs=, =airflow-scheduler-sysd.pcs=, =airflow-triggerer-sysd.pcs= --- the three long-running units.
-- =py3/bin/airflow-assemble.cs= --- assembly/glue step.
-- =py3/bin/airflow-here-dns.pcs= --- =.here= fake-domain DNS registration for =airflow.here=.
-- =py3/images/airflow-graphviz.pcs= --- source for the Capability Materialization figure.
-- =py3/tests/verify.sh= --- smoke test for =airflowAdmin.cs= and =quickAirflow.cs=.
+- =py3/bisos/kafka/kafkaInfo.py= --- the single source of facts: pinned versions and checksums, paths, ports, and the generators of the three config files and the units' identity lines.
+- =py3/bin/kafka-cbs.pcs= --- CBS declaring the bundle (sbom + 2 sysd units + assemble).
+- =py3/bin/cbmProc-kafka.spcs= --- planted CBM pointer leaf that materializes the CBS.
+- =py3/bin/kafka-sbom.pcs= --- package installation via [[https://github.com/bisos-pip/sbom][bisos.sbom]]: the JRE from apt, then Kafka and Kafbat UI from upstream.
+- =py3/bin/kafka-sysd.pcs=, =py3/bin/kafbat-ui-sysd.pcs= --- the two units.
+- =py3/bin/kafka-assemble.cs= --- assembly step (dns + vhost).
+- =py3/bin/kafka-here-dns.pcs= --- =.here= fake-domain DNS registration for =kafka.here=.
+- =py3/bin/kafka-wvd.pcs= --- nginx vhost for =kafka.here=, proxying (unbuffered, for Kafbat UI's message streaming) to Kafbat UI on loopback.
+- =py3/bin/kafkaAdmin.cs=, =py3/bin/quickKafka.cs= --- admin CS and cheat sheet.
+- =py3/tests/verify.sh= --- smoke test for =kafkaAdmin.cs= and =quickKafka.cs=.
 - =py3/setup.py=, =py3/pypiProc.sh= --- PyPI packaging (setup.py is dblock-driven; do not hand-edit).
 
 * Part of BISOS — ByStar Internet Services Operating System
@@ -181,22 +201,22 @@ for information about getting started with BISOS.
 is described as a cure for losses of autonomy and privacy in a book titled:
 [[https://github.com/bxplpc/120033][Nature of Polyexistentials]]
 
-/bisos.airflow/ is part of BISOS. It is a standalone package that can
+/bisos.kafka/ is part of BISOS. It is a standalone package that can
 be used independently of the full BISOS environment.
 
 * Documentation and Blee-Panels
 
-bisos.airflow is part of the ByStar Digital Ecosystem
+bisos.kafka is part of the ByStar Digital Ecosystem
 [[http://www.by-star.net]].
 
 This module's primary documentation is in the form of Blee-Panels.
 Blee-Panels are in the =./py3/panels= directory. From within Blee and
 BISOS these panels are accessible under the Blee "Panels" menu.
 
-See [[file:./py3/panels/bisos.airflow/_nodeBase_/fullUsagePanel-en.org]]
+See [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
 for a starting point.
 
-/bisos.airflow/ is best developed with [[https://github.com/bx-blee][Blee]], the /By* BISOS
+/bisos.kafka/ is best developed with [[https://github.com/bx-blee][Blee]], the /By* BISOS
 Libre-Halaal Emacs Environment/ --- a layer on top of Emacs and BISOS
 which creates a comprehensive integrated usage and development
 environment.
@@ -207,6 +227,13 @@ For support, criticism, comments and questions; please contact the
 author/maintainer\\
 [[http://mohsen.1.banan.byname.net][Mohsen Banan]] at:
 [[http://mohsen.1.banan.byname.net/contact]]
+
+* Planned Improvements
+
+** TODO Authentication for Kafbat UI, so it can listen beyond loopback
+** TODO Remote clients: a non-loopback broker listener, with SASL/TLS
+** TODO Live status Cmnds in kafkaAdmin.cs (broker reachable, quorum leader) rather than printed examples
+** TODO A Capability Materialization figure (kafka-graphviz.pcs), as bisos.airflow has
 
 
 # Local Variables:

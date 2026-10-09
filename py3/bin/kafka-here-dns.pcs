@@ -1,0 +1,35 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* ~[Summary]~ :: A =PlantedCmndService= for kafka.here --- the /etc/hosts entry Kafbat UI is browsed by
+#+end_org """
+
+from bisos.b import cs
+import collections
+
+from bisos.csSeed import seedsLib
+
+from bisos.dnsCap import dnsCap_seed #  noqa: F401  # type: ignore[unused-import] _atExit_
+
+from bisos.dnsCap import dnsCap_seedInfo
+from bisos.kafka.kafkaInfo import kafkaInfo
+cntrlInfo = dnsCap_seedInfo.cmndsControlInfo
+
+cntrlInfo.dnsSpecMethod = dnsCap_seedInfo.DnsSpecMethod.etcHosts   # Other choice is tinydns
+cntrlInfo.fqdn = kafkaInfo.fqdn
+
+from bisos.csSeed import csCmndsList_seedInfo
+csCmnd = csCmndsList_seedInfo.csCmnd
+
+csCmndsList = [
+    csCmnd("dnsCap_update",),
+    csCmnd("dnsCap_ensureHostsDblock"),
+    csCmnd("dnsCap_verify",),
+    csCmnd("dnsCap_resolve", args=f"{cntrlInfo.fqdn}"),
+    csCmnd("dnsCap_fqdnPing",
+           args=f"{cntrlInfo.fqdn}"),
+]
+
+csCmndsList_seedInfo.setup(
+    csCmndsList=csCmndsList,
+)

@@ -3,8 +3,8 @@
 
 """ #+begin_org
 * ~[Summary]~ :: A =CmndSvc= for admin-facing information about this host's
-  =airflow.here= standalone×systemd Airflow installation: service status,
-  log/dag locations, and users.
+  =kafka.here= Kafka (KRaft, single node) + Kafbat UI installation: listeners,
+  service status, paths, topics, consumer groups and config drift.
 #+end_org """
 
 ####+BEGIN: b:py3:cs:file/dblockControls :classification "cs-mu"
@@ -52,16 +52,16 @@ csInfo['cmndParts'] = 'IcmCmndParts[common] IcmCmndParts[param]'
 """ #+begin_org
 * [[elisp:(org-cycle)][| ~Description~ |]] :: [[file:/bisos/git/auth/bxRepos/blee-binders/bisos-core/PyFwrk/bisos-pip/bisos.cs/_nodeBase_/fullUsagePanel-en.org][BISOS CmndSvcs Panel]]   [[elisp:(org-cycle)][| ]]
 
-This is an admin-facing =CmndSvc= for this host's =airflow.here= standalone×systemd
-Airflow installation: where the DAGs and logs live, links for operating the
-=airflow-*-sysd.pcs= units, and where to find/manage users (with the initial
-default admin password, if one was set at first =airflow users create=). It is a
-starting-point converted from =bisos.dockerProc='s django-derived
-=siteRegistrars-assemble.cs=; it will be expanded as bisos.airflow develops.
+This is an admin-facing =CmndSvc= for this host's =kafka.here= installation ---
+Apache Kafka as a single-node KRaft broker+controller, and Kafbat UI as its web UI:
+the listeners and where things live, links for operating the =kafka-sysd.pcs= and
+=kafbat-ui-sysd.pcs= units, topic and consumer-group CLI invocations, and a
+read-only =driftCheck= of the live config files and units against
+=bisos.kafka.kafkaInfo=. Modelled on =bisos.airflow='s =airflowAdmin.cs=.
 
 ** Status: Starting point -- not yet complete
 ** /[[elisp:(org-cycle)][| Planned Improvements |]]/ :
-*** TODO Read AIRFLOW_HOME / port / fqdn from bisos.airflow's own config rather than hardcoding
+*** TODO Live status Cmnds (broker reachable, quorum leader, topic count) rather than printed examples
 #+end_org """
 
 ####+BEGIN: b:prog:file/orgTopControls :outLevel 1
@@ -90,31 +90,16 @@ from bisos.common import csParam
 import collections
 ####+END:
 
+# The facts of the installation --- account, versions, paths, listeners, fqdn, and the
+# CLI form for by-hand invocations --- come from bisos.kafka.kafkaInfo, the one
+# source the sbom, the units, dns and vhost read too.
 import pathlib
 
-from bisos.banna import tcpPorts as bannaTcpPorts
-
-_airflowFqdn = "airflow.here"
-# AIRFLOW_HOME of the systemd-managed installation, matching what
-# airflow-sbom.pcs writes to /etc/default/airflow and what the airflow-*.service
-# units read via EnvironmentFile. Deliberately NOT pathlib.Path.home()/"airflow":
-# the services run as User=airflow, so resolving the invoker's home would report
-# whoever happens to run this CS rather than the installation being administered.
-_airflowHome = pathlib.Path("/opt/airflow")
-_airflowDagsDir = _airflowHome / "dags"
-_airflowLogsDir = _airflowHome / "logs"
-_airflowUser = "airflow"
-_airflowBin = "/bisos/venv/py3/asc/bin/airflow"
-
-# Prefix for every by-hand CLI invocation. Both halves matter:
-#   sudo -u airflow  -- AIRFLOW_HOME and the SQLite metadata DB are airflow-owned;
-#                       running the CLI as root leaves root-owned -wal/-shm files
-#                       the services then cannot write.
-#   env AIRFLOW_HOME -- /etc/default/airflow is an EnvironmentFile read by systemd,
-#                       NOT by an interactive shell. Without this the CLI silently
-#                       operates on ~airflow/airflow and reports an empty install.
-_airflowCli = f"sudo -u {_airflowUser} env AIRFLOW_HOME={_airflowHome} {_airflowBin}"
-_airflowPortNu = bannaTcpPorts.tcpPortsAssignedList.tcpPortsList['airflow'].portNu
+from bisos.basics import pyRunAs
+from bisos.kafka.kafkaInfo import (
+    kafkaInfo, serverPropertiesContent, envFileContent, kafbatEnvFileContent,
+    kvDrift, unitDrift,
+)
 
 """ #+begin_org
 *  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] ~csuList emacs-list Specifications~  [[elisp:(blee:org:code-block/above-run)][ /Eval Below/ ]] [[elisp:(org-cycle)][| ]]
@@ -191,20 +176,23 @@ class examples(cs.Cmnd):
 
         cmnd = cs.examples.cmndEnter
 
-        cs.examples.menuChapter('=Airflow.Here -- Host, DAGs and Logs=')
-        cmnd('hostInfo', comment=" # fqdn, port, AIRFLOW_HOME, dags/logs dirs")
+        cs.examples.menuChapter('=Kafka.Here -- Host, Listeners, Paths and Logs=')
+        cmnd('hostInfo', comment=" # fqdn, the three banna ports, install/config/data/log paths")
 
-        cs.examples.menuChapter('=Airflow.Here -- systemd Units=')
-        cmnd('servicesInfo', comment=" # links to the 4 airflow-*-sysd.pcs units")
+        cs.examples.menuChapter('=Kafka.Here -- systemd Units=')
+        cmnd('servicesInfo', comment=" # links to kafka-sysd.pcs and kafbat-ui-sysd.pcs")
 
-        cs.examples.menuChapter('=Airflow.Here -- DAGs=')
-        cmnd('dagsInfo', comment=" # list, trigger, pause/unpause, graph, parsing health")
+        cs.examples.menuChapter('=Kafka.Here -- Topics and Messages=')
+        cmnd('topicsInfo', comment=" # create, list, describe, produce, consume")
 
-        cs.examples.menuChapter('=Airflow.Here -- Users=')
-        cmnd('usersInfo', comment=" # SimpleAuthManager: where users and passwords live")
+        cs.examples.menuChapter('=Kafka.Here -- Consumer Groups=')
+        cmnd('consumerGroupsInfo', comment=" # list, describe (lag), reset offsets")
+
+        cs.examples.menuChapter('=Kafka.Here -- Do Installation And Code Agree?=')
+        cmnd('driftCheck', comment=" # read-only: live config files and units against bisos.kafka.kafkaInfo")
 
         cs.examples.menuChapter('=Full Overview=')
-        cmnd('fullUpdate', comment=" # Show hostInfo + servicesInfo + dagsInfo + usersInfo")
+        cmnd('fullUpdate', comment=" # Show hostInfo + servicesInfo + topicsInfo + consumerGroupsInfo")
 
         return(cmndOutcome)
 
@@ -229,12 +217,12 @@ class fullUpdate(cs.Cmnd):
             return failed(cmndOutcome)
 ####+END:
         if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print hostInfo, servicesInfo and usersInfo together.
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print hostInfo, servicesInfo, topicsInfo and consumerGroupsInfo together.
         #+end_org """): return(cmndOutcome)
 
         self.captureRunStr(""" #+begin_org
 #+begin_src sh :results output :session shared
-  airflowAdmin.cs -i fullUpdate
+  kafkaAdmin.cs -i fullUpdate
 #+end_src
 #+RESULTS:
 #+begin_example
@@ -243,8 +231,8 @@ class fullUpdate(cs.Cmnd):
 
         hostInfo().pyCmnd()
         servicesInfo().pyCmnd()
-        dagsInfo().pyCmnd()
-        usersInfo().pyCmnd()
+        topicsInfo().pyCmnd()
+        consumerGroupsInfo().pyCmnd()
 
         return cmndOutcome
 
@@ -270,28 +258,41 @@ class hostInfo(cs.Cmnd):
             return failed(cmndOutcome)
 ####+END:
         if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print this host's Airflow fqdn/port and where DAGs/logs live.
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print this host's Kafka listeners, Kafbat UI address and where things live.
         #+end_org """): return(cmndOutcome)
 
         literal = cs.examples.execInsert
 
         cs.examples.menuSection('/Host/')
-        literal(f"echo {_airflowFqdn}   # fqdn -- see py3/bin/airflow-here-dns.pcs")
-        literal(f"echo {_airflowPortNu}   # webserver/api-server port -- see bisos.banna tcpPorts")
-        literal(f"http://{_airflowFqdn}   # web UI -- open in a browser")
+        literal(f"echo {kafkaInfo.fqdn}   # fqdn -- see py3/bin/kafka-here-dns.pcs")
+        literal(f"{kafkaInfo.baseUrl}   # Kafbat UI -- open in a browser")
+        literal(f"curl -sI {kafkaInfo.kafbatLocalUrl}   # Kafbat UI directly, bypassing nginx")
 
-        cs.examples.menuSection('/AIRFLOW_HOME/')
-        literal(f"echo {_airflowHome}")
+        cs.examples.menuSection('/Listeners -- ports from bisos.banna tcpPorts/')
+        literal(f"echo {kafkaInfo.bootstrapServers}   # broker, PLAINTEXT -- what clients use as bootstrap.servers")
+        literal(f"echo {kafkaInfo.controllerAddr}   # KRaft controller")
+        literal(f"ss -ltnp | grep -E ':({kafkaInfo.portNu}|{kafkaInfo.controllerPortNu}|{kafkaInfo.kafbatPortNu}) '")
 
-        cs.examples.menuSection('/DAG files -- input DAGs directory for this installation/')
-        literal(f"echo {_airflowDagsDir}   # AIRFLOW_HOME/dags -- drop .py DAG files here")
-        literal(f"ls -la {_airflowDagsDir}")
+        cs.examples.menuSection('/Installation -- versions are pinned in bisos.kafka.kafkaInfo/')
+        literal(f"ls -l {kafkaInfo.homeLink}   # -> {kafkaInfo.distDir}")
+        literal(f"{kafkaInfo.binPath('kafka-topics')} --version")
+        literal(f"ls -l {kafkaInfo.kafbatJar}")
+
+        cs.examples.menuSection('/Config -- root:kafka 640, written only when absent/')
+        literal(f"sudo cat {kafkaInfo.serverProps}")
+        literal(f"sudo cat {kafkaInfo.envFile}")
+        literal(f"sudo cat {kafkaInfo.kafbatEnvFile}")
+
+        cs.examples.menuSection('/Data -- KRaft metadata and partition logs/')
+        literal(f"sudo cat {kafkaInfo.metaProps}   # cluster.id, node.id")
+        literal(f"sudo du -sh {kafkaInfo.dataDir}")
+        literal(f"sudo -u {kafkaInfo.acctName} {kafkaInfo.binPath('kafka-metadata-quorum')} --bootstrap-controller {kafkaInfo.controllerAddr} describe --status")
 
         cs.examples.menuSection('/Logs/')
-        literal(f"ls -la {_airflowLogsDir}")
-        literal("journalctl -u airflow-webserver.service -f")
-        literal("journalctl -u airflow-scheduler.service -f")
-        literal("journalctl -u airflow-triggerer.service -f")
+        literal(f"ls -la {kafkaInfo.logDir}")
+        literal(f"tail -f {kafkaInfo.logDir}/server.log")
+        literal("journalctl -u kafka.service -f")
+        literal("journalctl -u kafbat-ui.service -f")
 
         return cmndOutcome
 
@@ -317,43 +318,126 @@ class servicesInfo(cs.Cmnd):
             return failed(cmndOutcome)
 ####+END:
         if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print links for operating the 4 airflow-*-sysd.pcs units
-        (db-migration first, then webserver/scheduler/triggerer).
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print links for operating the kafka and kafbat-ui units
+        (broker first, then the UI).
         #+end_org """): return(cmndOutcome)
 
         literal = cs.examples.execInsert
 
-        cs.examples.menuSection('/DB Migration (run/verify first)/')
-        literal("py3/bin/airflow-db-sysd.pcs -i examples   # list this unit's Cmnds")
-        literal("systemctl status airflow-db.service")
+        cs.examples.menuSection('/Kafka broker+controller/')
+        literal("py3/bin/kafka-sysd.pcs -i examples   # list this unit's Cmnds")
+        literal("systemctl status kafka.service")
+        literal("systemctl restart kafka.service")
 
-        cs.examples.menuSection('/Webserver/')
-        literal("py3/bin/airflow-webserver-sysd.pcs -i examples")
-        literal("systemctl status airflow-webserver.service")
-        literal("systemctl restart airflow-webserver.service")
+        cs.examples.menuSection('/Kafbat UI/')
+        literal("py3/bin/kafbat-ui-sysd.pcs -i examples")
+        literal("systemctl status kafbat-ui.service")
+        literal("systemctl restart kafbat-ui.service")
 
-        cs.examples.menuSection('/Scheduler/')
-        literal("py3/bin/airflow-scheduler-sysd.pcs -i examples")
-        literal("systemctl status airflow-scheduler.service")
-        literal("systemctl restart airflow-scheduler.service")
+        cs.examples.menuSection('/kafka.here -- dns and nginx vhost/')
+        literal("py3/bin/kafka-here-dns.pcs -i dnsCap_verify")
+        literal("py3/bin/kafka-wvd.pcs -i webVd_verify")
+        literal("py3/bin/kafka-assemble.cs -i fullUpdate   # both of the above, updated")
 
-        cs.examples.menuSection('/Triggerer/')
-        literal("py3/bin/airflow-triggerer-sysd.pcs -i examples")
-        literal("systemctl status airflow-triggerer.service")
-        literal("systemctl restart airflow-triggerer.service")
-
-        cs.examples.menuSection('/CBS/CBM assembly (all 4 units + sbom + dns as one bundle)/')
-        literal("py3/bin/airflow-cbs.pcs -i examples")
-        literal("py3/bin/cbmProc-airflow.spcs -i examples")
+        cs.examples.menuSection('/CBS/CBM assembly (sbom + 2 units + assemble as one bundle)/')
+        literal("py3/bin/kafka-cbs.pcs -i examples")
+        literal("py3/bin/cbmProc-kafka.spcs -i examples")
 
         return cmndOutcome
 
 
-####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "usersInfo" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "topicsInfo" :extent "verify" :comment "Topics -- create, list, describe, produce, consume" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
 """ #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<usersInfo>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<topicsInfo>>  *Topics -- create, list, describe, produce, consume*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
 #+end_org """
-class usersInfo(cs.Cmnd):
+class topicsInfo(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Topics -- create, list, describe, produce, consume"""
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        if self.cmndDocStr(f""" #+begin_org
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print the topic-level CLI invocations, --bootstrap-server already supplied.
+        #+end_org """): return(cmndOutcome)
+
+        literal = cs.examples.execInsert
+        _topic = "bisosTest"
+
+        cs.examples.menuSection('/Topics/')
+        literal(f"{kafkaInfo.cli('kafka-topics')} --list")
+        literal(f"{kafkaInfo.cli('kafka-topics')} --create --topic {_topic} --partitions 1 --replication-factor 1")
+        literal(f"{kafkaInfo.cli('kafka-topics')} --describe --topic {_topic}")
+        literal(f"{kafkaInfo.cli('kafka-topics')} --delete --topic {_topic}")
+
+        cs.examples.menuSection('/Produce and Consume/')
+        literal(f"echo hello | {kafkaInfo.cli('kafka-console-producer')} --topic {_topic}")
+        literal(f"{kafkaInfo.cli('kafka-console-consumer')} --topic {_topic} --from-beginning --max-messages 10")
+
+        cs.examples.menuSection('/Topic Config/')
+        literal(f"{kafkaInfo.cli('kafka-configs')} --entity-type topics --entity-name {_topic} --describe")
+        literal(f"{kafkaInfo.cli('kafka-configs')} --entity-type topics --entity-name {_topic} --alter --add-config retention.ms=86400000")
+
+        cs.examples.menuSection('/Broker/')
+        literal(f"{kafkaInfo.cli('kafka-broker-api-versions')} | head -1   # reachable?")
+        literal(f"{kafkaInfo.cli('kafka-log-dirs')} --describe")
+
+        return cmndOutcome
+
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "consumerGroupsInfo" :extent "verify" :comment "Consumer groups -- list, lag, reset" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<consumerGroupsInfo>>  *Consumer groups -- list, lag, reset*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class consumerGroupsInfo(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Consumer groups -- list, lag, reset"""
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        if self.cmndDocStr(f""" #+begin_org
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Print the consumer-group CLI invocations. Kafbat UI shows the same, live.
+        #+end_org """): return(cmndOutcome)
+
+        literal = cs.examples.execInsert
+        _group = "<group>"
+
+        cs.examples.menuSection('/Consumer Groups/')
+        literal(f"{kafkaInfo.cli('kafka-consumer-groups')} --list")
+        literal(f"{kafkaInfo.cli('kafka-consumer-groups')} --describe --group {_group}   # LAG per partition")
+        literal(f"{kafkaInfo.cli('kafka-consumer-groups')} --describe --all-groups --state")
+
+        cs.examples.menuSection('/Reset Offsets -- group must have no active members/')
+        literal(f"{kafkaInfo.cli('kafka-consumer-groups')} --group {_group} --reset-offsets --to-earliest --all-topics --dry-run")
+        literal(f"{kafkaInfo.cli('kafka-consumer-groups')} --group {_group} --reset-offsets --to-earliest --all-topics --execute")
+
+        return cmndOutcome
+
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "driftCheck" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<driftCheck>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class driftCheck(cs.Cmnd):
     cmndParamsMandatory = [ ]
     cmndParamsOptional = [ ]
     cmndArgsLen = {'Min': 0, 'Max': 0,}
@@ -370,107 +454,55 @@ class usersInfo(cs.Cmnd):
             return failed(cmndOutcome)
 ####+END:
         if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Users and passwords under Airflow 3's SimpleAuthManager.
-
-        NOTE: Airflow 3 has *no* ``airflow users`` command group. The Airflow 2
-        commands (``users list`` / ``users create`` / ``users reset-password``)
-        do not exist. Users are declared in configuration and passwords live in
-        a plaintext JSON file under AIRFLOW_HOME.
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Compare the live installation with bisos.kafka.kafkaInfo. Read-only.
         #+end_org """): return(cmndOutcome)
 
-        literal = cs.examples.execInsert
-        _pwFile = _airflowHome / "simple_auth_manager_passwords.json.generated"
+        # The three files are root:kafka 640, so they are read as root. Nothing is written.
+        # They are written only when absent: hand overrides are legitimate, and generator lines
+        # added later never reach existing hosts. "missing" is therefore a finding, not an error.
+        for livePath, generated in (
+                (kafkaInfo.serverProps, serverPropertiesContent()),
+                (kafkaInfo.envFile, envFileContent()),
+                (kafkaInfo.kafbatEnvFile, kafbatEnvFileContent()),
+        ):
+            print(f"* {livePath}")
+            if not livePath.exists():   # stat needs no root; reading does
+                print("  not installed")
+                continue
+            liveText = pyRunAs.as_root_readFromFile(livePath)
+            if not liveText:
+                print(f"  cannot read {livePath}")
+                continue
+            drift = kvDrift(liveText, generated)
+            for key in drift["missing"]:
+                print(f"  missing  {key}   (generator has it, live file does not)")
+            for key, expected, live in drift["differs"]:
+                print(f"  differs  {key}   expected={expected}   live={live}")
+            for key in drift["extra"]:
+                print(f"  extra    {key}   (not generated -- a hand addition)")
+            if not (drift["missing"] or drift["differs"] or drift["extra"]):
+                print("  agrees with the generator")
 
-        cs.examples.menuSection('/Who The Users Are -- declared in config, not a DB/')
-        literal(f"{_airflowCli} config get-value core auth_manager")
-        literal(f"{_airflowCli} config get-value core simple_auth_manager_users"
-                "   # username:role pairs -- NOT passwords")
+        for unitName, envFile in (("kafka", kafkaInfo.envFile), ("kafbat-ui", kafkaInfo.kafbatEnvFile)):
+            unitPath = pathlib.Path(f"/etc/systemd/system/{unitName}.service")
+            print(f"* {unitPath}")
+            if not unitPath.exists():
+                print("  not installed")
+                continue
+            lacking = unitDrift(unitPath.read_text(), envFile)
+            if lacking:
+                for line in lacking:
+                    print(f"  missing  {line}")
+            else:
+                print("  identity lines agree (User, Group, EnvironmentFile)")
 
-        cs.examples.menuSection('/Current Password/')
-        literal(f"sudo cat {_pwFile}")
-        literal("airflow-sbom.pcs -i adminPasswd   # same value, read as root")
-
-        cs.examples.menuSection('/Set The admin Password/')
-        # SimpleAuthManager only fills in users MISSING from this file (see
-        # simple_auth_manager.py, "if user.username not in passwords"), so a
-        # hand-written entry survives restarts rather than being regenerated.
-        literal(f"""echo '{{"admin": "airflow"}}' | sudo -u {_airflowUser} tee {_pwFile}""")
-        literal(f"sudo -u {_airflowUser} chmod 600 {_pwFile}")
-        literal("sudo systemctl restart airflow-webserver   # required, re-reads the file")
-
-        cs.examples.menuSection('/Caution/')
-        literal("# SimpleAuthManager is dev-only by design: plaintext passwords,")
-        literal("# generated secrets printed to stdout/logs, no rotation mechanism.")
-        literal("# Use FAB or Keycloak auth managers for anything exposed.")
-
-        return cmndOutcome
-
-
-####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "dagsInfo" :extent "verify" :comment "DAGs -- list, trigger, inspect" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
-""" #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<dagsInfo>>  *DAGs -- list, trigger, inspect*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
-#+end_org """
-class dagsInfo(cs.Cmnd):
-    cmndParamsMandatory = [ ]
-    cmndParamsOptional = [ ]
-    cmndArgsLen = {'Min': 0, 'Max': 0,}
-
-    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
-    def cmnd(self,
-             rtInv: cs.RtInvoker,
-             cmndOutcome: b.op.Outcome,
-    ) -> b.op.Outcome:
-        """DAGs -- list, trigger, inspect"""
-        failed = b_io.eh.badOutcome
-        callParamsDict = {}
-        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
-            return failed(cmndOutcome)
-####+END:
-        if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Listing, triggering and inspecting DAGs from the CLI.
-
-        Every invocation is prefixed with ``sudo -u airflow env AIRFLOW_HOME=...``
-        -- see the _airflowCli comment near the top of this file for why both
-        halves are required.
-        #+end_org """): return(cmndOutcome)
-
-        literal = cs.examples.execInsert
-        _dag = "<dag_id>"
-
-        cs.examples.menuSection('/What Is Registered/')
-        literal(f"{_airflowCli} dags list")
-        literal(f"{_airflowCli} dags list-import-errors   # empty output is good")
-        literal(f"{_airflowCli} dags list-runs {_dag}     # dag_id is POSITIONAL, not -d")
-
-        cs.examples.menuSection('/Trigger A Run At Will/')
-        literal(f"{_airflowCli} dags trigger {_dag}")
-        literal(f"{_airflowCli} dags trigger {_dag} -r <run-id>   # label it, e.g. by config under test")
-        literal("# A manual trigger QUEUES rather than starts when max_active_runs=1")
-        literal("# and a scheduled run is already active.")
-
-        cs.examples.menuSection('/Pause and Unpause/')
-        literal(f"{_airflowCli} dags pause {_dag}")
-        literal(f"{_airflowCli} dags unpause {_dag}")
-        literal("# New DAGs land PAUSED. Nothing runs until unpaused.")
-
-        cs.examples.menuSection('/Tasks Of A DAG/')
-        literal(f"{_airflowCli} tasks list {_dag}")
-        literal(f"{_airflowCli} tasks states-for-dag-run {_dag} <run_id>")
-        literal(f"{_airflowCli} tasks test {_dag} <task_id>"
-                "   # run ONE task now, no scheduling, no unpause needed")
-
-        cs.examples.menuSection('/Graphical Dependencies/')
-        literal("# The web UI Graph view is the usual answer: http://" + _airflowFqdn)
-        literal(f"{_airflowCli} dags show {_dag}                  # needs the graphviz pip pkg")
-        literal(f"{_airflowCli} dags show {_dag} --save /tmp/{_dag}.png")
-
-        cs.examples.menuSection('/Health Of The Parsing Layer/')
-        # Airflow 3 parses DAG files in a standalone dag-processor, not in the
-        # scheduler. With it absent every unit looks healthy, the UI serves, and
-        # no DAG is ever registered -- this is the check that distinguishes that
-        # case from a working install.
-        literal(f"{_airflowCli} jobs check --job-type DagProcessorJob")
-        literal(f"{_airflowCli} jobs check --job-type SchedulerJob")
+        print(f"* {kafkaInfo.homeLink}")
+        if not kafkaInfo.homeLink.exists():
+            print("  not installed")
+        elif kafkaInfo.homeLink.resolve() != kafkaInfo.distDir:
+            print(f"  points at {kafkaInfo.homeLink.resolve()}, kafkaInfo pins {kafkaInfo.distDir}")
+        else:
+            print(f"  points at the pinned {kafkaInfo.distName}")
 
         return cmndOutcome
 

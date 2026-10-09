@@ -1,8 +1,9 @@
-#!/usr/bin/env python
+#!/bin/env python
 # -*- coding: utf-8 -*-
 
 """ #+begin_org
-* ~[Summary]~ :: A =CmndSvc= for running the equivalent of facter in py and remotely with rpyc.
+* ~[Summary]~ :: A =CmndSvc= providing a quick direct-command cheat sheet for the
+  Kafka CLI tools, Kafbat UI and the =kafka= / =kafbat-ui= systemd units on this host.
 #+end_org """
 
 ####+BEGIN: b:py3:cs:file/dblockControls :classification "cs-mu"
@@ -28,8 +29,9 @@
 
 ####+BEGIN: b:prog:file/particulars :authors ("./inserts/authors-mb.org")
 """ #+begin_org
-* *[[elisp:(org-cycle)][| Particulars |]]* :: Authors, version
-** This File: /l/pip/siteRegistrars/py3/bin/siteRegistrars-assemble.cs
+* *[[elisp:(org-cycle)][| Particulars |]]* :: This File, Authors, version
+** This File: /bxRepos/bisos-pip/airflow/py3/bin/quickAirflow.cs
+** File True Name: /bisos/git/auth/bxRepos/bisos-pip/airflow/py3/bin/quickAirflow.cs
 ** Authors: Mohsen BANAN, http://mohsen.banan.1.byname.net/contact
 #+end_org """
 ####+END:
@@ -39,10 +41,10 @@
 * *[[elisp:(org-cycle)][| Particulars-csInfo |]]*
 #+end_org """
 import typing
-csInfo: typing.Dict[str, typing.Any] = { 'moduleName': ['facter-active'], }
-csInfo['version'] = '202409222627'
+csInfo: typing.Dict[str, typing.Any] = { 'moduleName': ['airflow'], }
+csInfo['version'] = '202502215707'
 csInfo['status']  = 'inUse'
-csInfo['panel'] = 'facter-active-Panel.org'
+csInfo['panel'] = 'quickAirflow-Panel.org'
 csInfo['groupingType'] = 'IcmGroupingType-pkged'
 csInfo['cmndParts'] = 'IcmCmndParts[common] IcmCmndParts[param]'
 ####+END:
@@ -50,12 +52,14 @@ csInfo['cmndParts'] = 'IcmCmndParts[common] IcmCmndParts[param]'
 """ #+begin_org
 * [[elisp:(org-cycle)][| ~Description~ |]] :: [[file:/bisos/git/auth/bxRepos/blee-binders/bisos-core/PyFwrk/bisos-pip/bisos.cs/_nodeBase_/fullUsagePanel-en.org][BISOS CmndSvcs Panel]]   [[elisp:(org-cycle)][| ]]
 
-This a =CmndSvc= for running the equivalent of facter in py and remotely with rpyc.
-With BISOS, it is used in CMDB remotely.
+This is a =CmndSvc= that provides a quick cheat-sheet of direct Kafka CLI
+(=kafka-*.sh=) and =systemctl=/=journalctl= commands for the =kafka.here=
+installation on this host, plus hints for reading Kafbat UI. Modelled on
+=bisos.airflow='s =quickAirflow.cs=.
 
-** Status: In use with BISOS
+** Status: Starting point -- not yet complete
 ** /[[elisp:(org-cycle)][| Planned Improvements |]]/ :
-*** TODO Convert all ICMs to CSs
+*** TODO Producer/consumer performance-test examples (kafka-producer-perf-test.sh)
 #+end_org """
 
 ####+BEGIN: b:prog:file/orgTopControls :outLevel 1
@@ -84,9 +88,7 @@ from bisos.common import csParam
 import collections
 ####+END:
 
-from bisos.capability import cba_assemble
-
-cba_assemble.cbaAssemble.assemblerType = "roPerfCs+DataBpos"
+from bisos.kafka.kafkaInfo import kafkaInfo
 
 """ #+begin_org
 *  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] ~csuList emacs-list Specifications~  [[elisp:(blee:org:code-block/above-run)][ /Eval Below/ ]] [[elisp:(org-cycle)][| ]]
@@ -95,25 +97,27 @@ cba_assemble.cbaAssemble.assemblerType = "roPerfCs+DataBpos"
   (list
    "bisos.b.cs.ro"
    "bisos.csPlayer.bleep"
-   ;; "bisos.facter.facter_csu"
-   "bisos.banna.bannaPortNu"
+   "bisos.common.commonCsParams"
+   "plantedCsu"
  ))
 #+END_SRC
 #+RESULTS:
-| bisos.b.cs.ro | bisos.csPlayer.bleep | bisos.banna.bannaPortNu |
+| bisos.b.cs.ro | bisos.csPlayer.bleep | bisos.common.commonCsParams | plantedCsu |
 #+end_org """
 
 ####+BEGIN: b:py3:cs:framework/csuListProc :pyImports t :csuImports t :csuParams t :csmuParams nil
 """ #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] =Process CSU List= with /3/ in csuList pyImports=t csuImports=t csuParams=t
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] ~Process CSU List~ with /4/ in csuList pyImports=t csuImports=t csuParams=t
 #+end_org """
 
 from bisos.b.cs import ro
 from bisos.csPlayer import bleep
-from bisos.banna import bannaPortNu
+from bisos.common import commonCsParams
 
+csuList = [ 'bisos.b.cs.ro', 'bisos.csPlayer.bleep', 'bisos.common.commonCsParams', 'plantedCsu', ]
 
-csuList = [ 'bisos.b.cs.ro', 'bisos.csPlayer.bleep', 'bisos.banna.bannaPortNu', ]
+if b.cs.G.plantOfThisSeed is None:
+    csuList.remove('plantedCsu')
 
 g_importedCmndsModules = cs.csuList_importedModules(csuList)
 
@@ -166,25 +170,16 @@ class examples(cs.Cmnd):
         cs.examples.myName(cs.G.icmMyName(), cs.G.icmMyFullName())
         cs.examples.commonBrief()
 
-        # od = collections.OrderedDict
-        cmnd = cs.examples.cmndEnter
-        # literal = cs.examples.execInsert
-        #
-
-        cs.examples.menuChapter('=Activation Commands=')
-        cmnd('hereDns', comment=" # ")
-        cmnd('webVirtDom', comment=" # ")
-
-        cs.examples.menuChapter('=Full Update=')
-        cmnd('fullUpdate', comment=" # Create Performer SAP / Activate BPOs")
+        kafkaDirectCmnds().pyCmnd()
 
         return(cmndOutcome)
 
-####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "fullUpdate" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "kafkaDirectCmnds" :comment "" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
 """ #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<fullUpdate>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<kafkaDirectCmnds>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
 #+end_org """
-class fullUpdate(cs.Cmnd):
+class kafkaDirectCmnds(cs.Cmnd):
     cmndParamsMandatory = [ ]
     cmndParamsOptional = [ ]
     cmndArgsLen = {'Min': 0, 'Max': 0,}
@@ -200,113 +195,73 @@ class fullUpdate(cs.Cmnd):
         if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
             return failed(cmndOutcome)
 ####+END:
-        if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  A starting point command.
-        #+end_org """): return(cmndOutcome)
-
-        self.captureRunStr(""" #+begin_org
-#+begin_src sh :results output :session shared
-  siteRegistrars-assemble.cs -i fullUpdate
-#+end_src
-#+RESULTS:
-#+begin_example
-#+end_example
+        self.cmndDocStr(f""" #+begin_org
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Provide direct examples of how to use the Kafka CLI tools, Kafbat UI
+        and this host's kafka / kafbat-ui systemd units.
         #+end_org """)
 
-        hereDns().pyCmnd()
-        webVirtDom().pyCmnd()
+        literal = cs.examples.execInsert
+        _bin = kafkaInfo.binDir
+        _bs = kafkaInfo.bootstrapServers
 
-        return cmndOutcome
+        cs.examples.menuChapter('=Direct Kafka Interface Commands=')
 
-####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "hereDns" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
-""" #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<hereDns>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
-#+end_org """
-class hereDns(cs.Cmnd):
-    cmndParamsMandatory = [ ]
-    cmndParamsOptional = [ ]
-    cmndArgsLen = {'Min': 0, 'Max': 0,}
+        cs.examples.menuSection('/Kafka Environment/')
+        literal(f"export PATH={_bin}:$PATH   # the tools are not on PATH by default")
+        literal(f"export BS={_bs}             # --bootstrap-server for every tool below")
+        literal("kafka-topics.sh --version")
+        literal("java -version")
 
-    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
-    def cmnd(self,
-             rtInv: cs.RtInvoker,
-             cmndOutcome: b.op.Outcome,
-    ) -> b.op.Outcome:
+        cs.examples.menuSection('/Topics/')
+        literal("kafka-topics.sh --bootstrap-server $BS --list")
+        literal("kafka-topics.sh --bootstrap-server $BS --create --topic t1 --partitions 1 --replication-factor 1")
+        literal("kafka-topics.sh --bootstrap-server $BS --describe --topic t1")
 
-        failed = b_io.eh.badOutcome
-        callParamsDict = {}
-        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
-            return failed(cmndOutcome)
-####+END:
-        if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  A starting point command.
-        #+end_org """): return(cmndOutcome)
+        cs.examples.menuSection('/Produce and Consume/')
+        literal("kafka-console-producer.sh --bootstrap-server $BS --topic t1            # one line = one message")
+        literal("kafka-console-consumer.sh --bootstrap-server $BS --topic t1 --from-beginning")
+        literal("kafka-console-consumer.sh --bootstrap-server $BS --topic t1 --group g1 # commits offsets as g1")
 
-        self.captureRunStr(""" #+begin_org
-#+begin_src sh :results output :session shared
-  siteRegistrars-assemble.cs -i roPerfSapCreate
-#+end_src
-#+RESULTS:
-#+begin_example
-,** cmnd= svcPerfSiteRegistrars.cs --svcName="svcSiteRegistrars" --perfName="svcSiteRegistrars" --rosmu="svcPerfSiteRegistrars.cs"  -i perf_sapCreate
-Cmnd -- No Results
-#+end_example
-        #+end_org """)
+        cs.examples.menuSection('/Consumer Groups/')
+        literal("kafka-consumer-groups.sh --bootstrap-server $BS --list")
+        literal("kafka-consumer-groups.sh --bootstrap-server $BS --describe --group g1")
 
-        if b.subProc.WOpW(invedBy=self, log=1).bash(
-                f"""airflow-here-dns.pcs -i dnsCap_update""",
-        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
+        cs.examples.menuSection('/KRaft Quorum and Storage/')
+        literal(f"kafka-metadata-quorum.sh --bootstrap-controller {kafkaInfo.controllerAddr} describe --status")
+        literal(f"sudo cat {kafkaInfo.metaProps}")
+        literal("# NEVER re-run kafka-storage.sh format on a used dataDir: it mints a new cluster.id")
 
-        return cmndOutcome
+        cs.examples.menuSection('/systemd Units/')
+        literal("systemctl status kafka.service")
+        literal("systemctl status kafbat-ui.service")
+        literal("systemctl restart kafka.service kafbat-ui.service")
 
-####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "webVirtDom" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
-""" #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<webVirtDom>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
-#+end_org """
-class webVirtDom(cs.Cmnd):
-    cmndParamsMandatory = [ ]
-    cmndParamsOptional = [ ]
-    cmndArgsLen = {'Min': 0, 'Max': 0,}
+        cs.examples.menuSection('/Logs/')
+        literal("journalctl -u kafka.service -f")
+        literal("journalctl -u kafbat-ui.service -f")
+        literal(f"ls -la {kafkaInfo.logDir}   # server.log, controller.log, state-change.log")
 
-    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
-    def cmnd(self,
-             rtInv: cs.RtInvoker,
-             cmndOutcome: b.op.Outcome,
-    ) -> b.op.Outcome:
+        cs.examples.menuChapter('=Kafbat UI Hints=')
 
-        failed = b_io.eh.badOutcome
-        callParamsDict = {}
-        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
-            return failed(cmndOutcome)
-####+END:
-        if self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  A starting point command.
-        #+end_org """): return(cmndOutcome)
+        cs.examples.menuSection('/Getting In/')
+        literal(f"# {kafkaInfo.baseUrl}         -- no login: Kafbat UI is loopback-only, without auth")
+        literal(f"# {kafkaInfo.kafbatLocalUrl}  -- directly, bypassing nginx")
+        literal(f"# cluster '{kafkaInfo.clusterName}' is fixed in {kafkaInfo.kafbatEnvFile} (DYNAMIC_CONFIG_ENABLED=false)")
 
-        self.captureRunStr(""" #+begin_org
-#+begin_src sh :results output :session shared
-  siteRegistrars-assemble.cs -i roPerfSapCreate
-#+end_src
-#+RESULTS:
-#+begin_example
-,** cmnd= svcPerfSiteRegistrars.cs --svcName="svcSiteRegistrars" --perfName="svcSiteRegistrars" --rosmu="svcPerfSiteRegistrars.cs"  -i perf_sapCreate
-Cmnd -- No Results
-#+end_example
-        #+end_org """)
+        cs.examples.menuSection('/What Is Where/')
+        literal("# Brokers         -- one broker, node.id 1; also shows the KRaft controller")
+        literal("# Topics          -- create/delete; Messages tab browses and produces")
+        literal("# Consumers       -- groups with per-partition lag")
 
-        if b.subProc.WOpW(invedBy=self, log=1).bash(
-                f"""airflow-wvd.pcs -i configFileUpdate --cls="configFile_nginxVd" --runAs=root""",
-        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
+        cs.examples.menuSection('/Reading Failures/')
+        literal("# Cluster shown offline  -> systemctl status kafka.service, then server.log")
+        literal("# Messages tab stalls    -> nginx buffering; kafka-wvd.pcs sets proxy_buffering off")
+        literal("# Broker will not start  -> meta.properties missing or cluster.id mismatch in dataDir")
 
-        if b.subProc.WOpW(invedBy=self, log=1).bash(
-                f"""airflow-wvd.pcs -i webVd_enable""",
-        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
-
-        return cmndOutcome
+        return(cmndOutcome)
 
 
-
-    ####+BEGIN: blee:bxPanel:foldingSection :outLevel 0 :sep nil :title "Main" :anchor ""  :extraInfo "Framework DBlock"
+####+BEGIN: blee:bxPanel:foldingSection :outLevel 0 :sep nil :title "Main" :anchor ""  :extraInfo "Framework DBlock"
 """ #+begin_org
 *  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*     [[elisp:(outline-show-subtree+toggle)][| _Main_: |]]  Framework DBlock  [[elisp:(org-shifttab)][<)]] E|
 #+end_org """

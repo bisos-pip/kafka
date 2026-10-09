@@ -1,9 +1,8 @@
-#!/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """ #+begin_org
-* ~[Summary]~ :: A =CmndSvc= providing a quick direct-command cheat sheet for the
-  =airflow= CLI and the =airflow-*-sysd= systemd units on this host.
+* ~[Summary]~ :: A =CmndSvc= for assembling kafka.here: the .here dns entry and the nginx vhost of Kafbat UI.
 #+end_org """
 
 ####+BEGIN: b:py3:cs:file/dblockControls :classification "cs-mu"
@@ -29,9 +28,8 @@
 
 ####+BEGIN: b:prog:file/particulars :authors ("./inserts/authors-mb.org")
 """ #+begin_org
-* *[[elisp:(org-cycle)][| Particulars |]]* :: This File, Authors, version
-** This File: /bxRepos/bisos-pip/airflow/py3/bin/quickAirflow.cs
-** File True Name: /bisos/git/auth/bxRepos/bisos-pip/airflow/py3/bin/quickAirflow.cs
+* *[[elisp:(org-cycle)][| Particulars |]]* :: Authors, version
+** This File: /l/pip/siteRegistrars/py3/bin/siteRegistrars-assemble.cs
 ** Authors: Mohsen BANAN, http://mohsen.banan.1.byname.net/contact
 #+end_org """
 ####+END:
@@ -41,10 +39,10 @@
 * *[[elisp:(org-cycle)][| Particulars-csInfo |]]*
 #+end_org """
 import typing
-csInfo: typing.Dict[str, typing.Any] = { 'moduleName': ['airflow'], }
-csInfo['version'] = '202502215707'
+csInfo: typing.Dict[str, typing.Any] = { 'moduleName': ['facter-active'], }
+csInfo['version'] = '202409222627'
 csInfo['status']  = 'inUse'
-csInfo['panel'] = 'quickAirflow-Panel.org'
+csInfo['panel'] = 'facter-active-Panel.org'
 csInfo['groupingType'] = 'IcmGroupingType-pkged'
 csInfo['cmndParts'] = 'IcmCmndParts[common] IcmCmndParts[param]'
 ####+END:
@@ -52,15 +50,11 @@ csInfo['cmndParts'] = 'IcmCmndParts[common] IcmCmndParts[param]'
 """ #+begin_org
 * [[elisp:(org-cycle)][| ~Description~ |]] :: [[file:/bisos/git/auth/bxRepos/blee-binders/bisos-core/PyFwrk/bisos-pip/bisos.cs/_nodeBase_/fullUsagePanel-en.org][BISOS CmndSvcs Panel]]   [[elisp:(org-cycle)][| ]]
 
-This is a =CmndSvc= that provides a quick cheat-sheet of direct =airflow= CLI
-and =systemctl=/=journalctl= commands for the =airflow.here= standalone×systemd
-installation on this host. It is a starting-point converted from
-=bisos.dockerProc='s =dockerCmnds.cs=; it will be expanded as bisos.airflow
-develops.
+This is the assemble step of kafka-cbs.pcs: after the sbom has installed Kafka
+and Kafbat UI, it registers =kafka.here= (kafka-here-dns.pcs) and installs and
+enables its nginx vhost (kafka-wvd.pcs), which proxies to Kafbat UI on loopback.
 
-** Status: Starting point -- not yet complete
-** /[[elisp:(org-cycle)][| Planned Improvements |]]/ :
-*** TODO Flesh out DAG/task-level examples once bisos.airflow CSU Cmnds exist
+** Status: Starting point
 #+end_org """
 
 ####+BEGIN: b:prog:file/orgTopControls :outLevel 1
@@ -89,6 +83,10 @@ from bisos.common import csParam
 import collections
 ####+END:
 
+from bisos.capability import cba_assemble
+
+cba_assemble.cbaAssemble.assemblerType = "roPerfCs+DataBpos"
+
 """ #+begin_org
 *  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] ~csuList emacs-list Specifications~  [[elisp:(blee:org:code-block/above-run)][ /Eval Below/ ]] [[elisp:(org-cycle)][| ]]
 #+BEGIN_SRC emacs-lisp
@@ -96,27 +94,25 @@ import collections
   (list
    "bisos.b.cs.ro"
    "bisos.csPlayer.bleep"
-   "bisos.common.commonCsParams"
-   "plantedCsu"
+   ;; "bisos.facter.facter_csu"
+   "bisos.banna.bannaPortNu"
  ))
 #+END_SRC
 #+RESULTS:
-| bisos.b.cs.ro | bisos.csPlayer.bleep | bisos.common.commonCsParams | plantedCsu |
+| bisos.b.cs.ro | bisos.csPlayer.bleep | bisos.banna.bannaPortNu |
 #+end_org """
 
 ####+BEGIN: b:py3:cs:framework/csuListProc :pyImports t :csuImports t :csuParams t :csmuParams nil
 """ #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] ~Process CSU List~ with /4/ in csuList pyImports=t csuImports=t csuParams=t
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] =Process CSU List= with /3/ in csuList pyImports=t csuImports=t csuParams=t
 #+end_org """
 
 from bisos.b.cs import ro
 from bisos.csPlayer import bleep
-from bisos.common import commonCsParams
+from bisos.banna import bannaPortNu
 
-csuList = [ 'bisos.b.cs.ro', 'bisos.csPlayer.bleep', 'bisos.common.commonCsParams', 'plantedCsu', ]
 
-if b.cs.G.plantOfThisSeed is None:
-    csuList.remove('plantedCsu')
+csuList = [ 'bisos.b.cs.ro', 'bisos.csPlayer.bleep', 'bisos.banna.bannaPortNu', ]
 
 g_importedCmndsModules = cs.csuList_importedModules(csuList)
 
@@ -134,12 +130,6 @@ def g_extraParams():
 ####+END:
 
 cs.invOutcomeReportControl(cmnd=True, ro=True)
-
-####+BEGIN: b:py3:cs:main/exposedSymbols :classes ()
-""" #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CsFrmWrk   [[elisp:(outline-show-subtree+toggle)][||]] ~Exposed Symbols List Specification~ with /0/ in Classes List
-#+end_org """
-####+END:
 
 ####+BEGIN: blee:bxPanel:foldingSection :outLevel 0 :sep nil :title "CmndSvcs" :anchor ""  :extraInfo "Command Services Section"
 """ #+begin_org
@@ -175,128 +165,143 @@ class examples(cs.Cmnd):
         cs.examples.myName(cs.G.icmMyName(), cs.G.icmMyFullName())
         cs.examples.commonBrief()
 
-        airflowDirectCmnds().pyCmnd()
+        # od = collections.OrderedDict
+        cmnd = cs.examples.cmndEnter
+        # literal = cs.examples.execInsert
+        #
+
+        cs.examples.menuChapter('=Activation Commands=')
+        cmnd('hereDns', comment=" # kafka.here in /etc/hosts")
+        cmnd('webVirtDom', comment=" # kafka.here nginx vhost -> Kafbat UI")
+
+        cs.examples.menuChapter('=Full Update=')
+        cmnd('fullUpdate', comment=" # hereDns + webVirtDom")
 
         return(cmndOutcome)
 
-
-####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "airflowDirectCmnds" :comment "" :parsMand "" :parsOpt "perfName" :argsMin 0 :argsMax 0 :pyInv ""
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "fullUpdate" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
 """ #+begin_org
-*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<airflowDirectCmnds>>  =verify= parsOpt=perfName ro=cli   [[elisp:(org-cycle)][| ]]
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<fullUpdate>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
 #+end_org """
-class airflowDirectCmnds(cs.Cmnd):
+class fullUpdate(cs.Cmnd):
     cmndParamsMandatory = [ ]
-    cmndParamsOptional = [ 'perfName', ]
+    cmndParamsOptional = [ ]
     cmndArgsLen = {'Min': 0, 'Max': 0,}
 
     @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
     def cmnd(self,
              rtInv: cs.RtInvoker,
              cmndOutcome: b.op.Outcome,
-             perfName: typing.Optional[str]=None,  # Cs Optional Param
     ) -> b.op.Outcome:
 
         failed = b_io.eh.badOutcome
-        callParamsDict = {'perfName': perfName, }
+        callParamsDict = {}
         if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
             return failed(cmndOutcome)
-        perfName = csParam.mappedValue('perfName', perfName)
 ####+END:
-        self.cmndDocStr(f""" #+begin_org
-** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  Provide direct examples of how to use the airflow CLI and this
-        host's airflow-*-sysd systemd units.
+        if self.cmndDocStr(f""" #+begin_org
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  hereDns, then webVirtDom.
+        #+end_org """): return(cmndOutcome)
+
+        self.captureRunStr(""" #+begin_org
+#+begin_src sh :results output :session shared
+  kafka-assemble.cs -i fullUpdate
+#+end_src
+#+RESULTS:
+#+begin_example
+#+end_example
         #+end_org """)
 
-        literal = cs.examples.execInsert
+        hereDns().pyCmnd()
+        webVirtDom().pyCmnd()
 
-        cs.examples.menuChapter('=Direct Airflow Interface Commands=')
+        return cmndOutcome
 
-        cs.examples.menuSection('/Airflow Environment/')
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "hereDns" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<hereDns>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class hereDns(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
 
-        literal("echo $AIRFLOW_HOME")
-        literal("airflow version")
-        literal("airflow config list")
-        literal("airflow info")
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
 
-        cs.examples.menuSection('/Airflow DB (see airflow-db-sysd.pcs)/')
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        if self.cmndDocStr(f""" #+begin_org
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  A starting point command.
+        #+end_org """): return(cmndOutcome)
 
-        literal("airflow db check")
-        literal("airflow db migrate")
+        self.captureRunStr(""" #+begin_org
+#+begin_src sh :results output :session shared
+  kafka-assemble.cs -i hereDns
+#+end_src
+#+RESULTS:
+#+begin_example
+#+end_example
+        #+end_org """)
 
-        cs.examples.menuSection('/Airflow Users/')
+        if b.subProc.WOpW(invedBy=self, log=1).bash(
+                f"""kafka-here-dns.pcs -i dnsCap_update""",
+        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
 
-        # Airflow 3 has no `airflow users` command group --- SimpleAuthManager
-        # replaced it. See airflowAdmin.cs -i usersInfo, and Web UI Hints below.
-        literal("airflow config get-value core auth_manager")
-        literal("airflow config get-value core simple_auth_manager_users   # username:role, NOT passwords")
+        return cmndOutcome
 
-        cs.examples.menuSection('/Airflow DAGs/')
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "webVirtDom" :comment "" :extent "verify" :ro "cli" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<webVirtDom>>  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class webVirtDom(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
 
-        literal("airflow dags list")
-        literal("airflow dags list-runs <dag_id>        # dag_id is POSITIONAL, not -d")
-        literal("airflow dags trigger <dag_id>")
-        literal("airflow tasks list <dag_id>")
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
 
-        cs.examples.menuSection('/systemd -- airflow-db-sysd.pcs, airflow-webserver-sysd.pcs, airflow-scheduler-sysd.pcs, airflow-triggerer-sysd.pcs/')
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        if self.cmndDocStr(f""" #+begin_org
+** [[elisp:(org-cycle)][| *CmndDesc:* | ]]  A starting point command.
+        #+end_org """): return(cmndOutcome)
 
-        literal("systemctl status airflow-db.service")
-        literal("systemctl status airflow-webserver.service")
-        literal("systemctl status airflow-scheduler.service")
-        literal("systemctl status airflow-triggerer.service")
-        literal("systemctl restart airflow-webserver.service airflow-scheduler.service airflow-triggerer.service")
+        self.captureRunStr(""" #+begin_org
+#+begin_src sh :results output :session shared
+  kafka-assemble.cs -i webVirtDom
+#+end_src
+#+RESULTS:
+#+begin_example
+#+end_example
+        #+end_org """)
 
-        cs.examples.menuSection('/Logs/')
+        if b.subProc.WOpW(invedBy=self, log=1).bash(
+                f"""kafka-wvd.pcs -i configFileUpdate --cls="configFile_nginxVd" --runAs=root""",
+        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
 
-        literal("journalctl -u airflow-webserver.service -f")
-        literal("journalctl -u airflow-scheduler.service -f")
-        literal("journalctl -u airflow-triggerer.service -f")
-        literal("journalctl -u airflow-dag-processor.service -f")
-        literal("ls -la $AIRFLOW_HOME/logs")
+        if b.subProc.WOpW(invedBy=self, log=1).bash(
+                f"""kafka-wvd.pcs -i webVd_enable""",
+        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
 
-        cs.examples.menuChapter('=Web UI Hints=')
-
-        cs.examples.menuSection('/Getting In/')
-
-        literal("# http://airflow.here         -- user: admin")
-        literal("sudo cat $AIRFLOW_HOME/simple_auth_manager_passwords.json.generated   # the password")
-        literal("airflow-sbom.pcs -i adminPasswd                                       # same, as root")
-        literal("# To set it:  echo '{\"admin\": \"airflow\"}' | sudo -u airflow tee that file")
-        literal("#             then: sudo systemctl restart airflow-webserver")
-
-        cs.examples.menuSection('/Where To Click/')
-
-        literal("# DAGs list   -- home page. Toggle at the left of each name pauses/unpauses.")
-        literal("#                New DAGs land PAUSED; nothing runs until unpaused.")
-        literal("# Trigger     -- the play button, on the DAG row or its detail page.")
-        literal("# Grid        -- runs x tasks, one coloured square per task instance.")
-        literal("# Graph       -- the dependency picture (start -> per-OSS tasks -> end).")
-        literal("# Gantt       -- shows pool queuing as a staircase: N concurrent, N = pool slots.")
-        literal("# Duration    -- per-task time across runs; where the slow OSSes show up.")
-        literal("# Logs tab    -- inside a task instance. stderr of the XU lands here.")
-
-        cs.examples.menuSection('/Reading What You See/')
-
-        literal("# A run is only as fast as its slowest single task --- pool size changes")
-        literal("# how many run at once, never how long one takes.")
-        literal("# Red across every task, none ever starting -> suspect the Execution API")
-        literal("# (AIRFLOW__CORE__EXECUTION_API_SERVER_URL), not the DAG.")
-        literal("# No DAGs listed at all -> suspect the dag-processor, not the scheduler:")
-        literal("#   airflow jobs check --job-type DagProcessorJob")
-
-        cs.examples.menuSection('/CLI Equivalents/')
-
-        literal("airflow dags trigger <dag_id>              # the play button")
-        literal("airflow dags unpause <dag_id>              # the toggle")
-        literal("airflow tasks test <dag_id> <task_id>      # run ONE task, no scheduling")
-        literal("airflow dags show <dag_id> --save /tmp/dag.png    # Graph view, needs graphviz pkg")
-        literal("# By hand the CLI needs BOTH: sudo -u airflow (DB is airflow-owned) and")
-        literal("# env AIRFLOW_HOME=... (/etc/default/airflow is read by systemd, not shells).")
-
-        return(cmndOutcome)
-
+        return cmndOutcome
 
 
-####+BEGIN: blee:bxPanel:foldingSection :outLevel 0 :sep nil :title "Main" :anchor ""  :extraInfo "Framework DBlock"
+
+    ####+BEGIN: blee:bxPanel:foldingSection :outLevel 0 :sep nil :title "Main" :anchor ""  :extraInfo "Framework DBlock"
 """ #+begin_org
 *  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*     [[elisp:(outline-show-subtree+toggle)][| _Main_: |]]  Framework DBlock  [[elisp:(org-shifttab)][<)]] E|
 #+end_org """

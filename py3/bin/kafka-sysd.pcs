@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+
+####+BEGIN: b:prog:file/particulars :authors ("./inserts/authors-mb.org")
+""" #+begin_org
+* *[[elisp:(org-cycle)][| Particulars |]]* :: Authors, version
+** This File: /bisos/git/bxRepos/bisos-pip/kafka/py3/bin/kafka-sysd.pcs
+** Authors: Mohsen BANAN, http://mohsen.banan.1.byname.net/contact
+#+end_org """
+####+END:
+
+""" #+begin_org
+* Panel::  [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+The kafka.service unit: one process that is both the broker and the KRaft controller.
+Storage must already be formatted --- kafka-sbom.pcs does that, once.
+No ExecStop=: systemd's SIGTERM is Kafka's graceful (controlled) shutdown, while
+kafka-server-stop.sh would signal every Kafka process on the host. 143 is how the
+JVM exits on that SIGTERM.
+#+end_org """
+
+from bisos.debian import systemd_seedInfo
+from bisos.debian import systemd_seed as systemd_seed  # noqa
+
+from bisos.kafka.kafkaInfo import kafkaInfo, sysdServiceLines
+
+def sysdUnitFileFunc() -> str | None:
+    """Produce the unit file as a string."""
+
+    # Not on PATH: the scripts live under kafkaInfo.homeLink, so whichBinPath() cannot find them.
+    if not ( execPath := kafkaInfo.binPath("kafka-server-start") ).exists():
+        return None
+
+    templateStr = f"""
+[Unit]
+Description=Apache Kafka (KRaft broker+controller)
+After=network.target
+
+[Service]
+Type=simple
+{sysdServiceLines(kafkaInfo.envFile)}ExecStart={execPath} {kafkaInfo.serverProps}
+LimitNOFILE=100000
+TimeoutStopSec=120
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+"""
+    return templateStr
+
+systemd_seedInfo.setup(
+    seedType="sysdSysUnit",
+    sysdUnitName="kafka",
+    sysdUnitFileFunc=sysdUnitFileFunc,
+)

@@ -1,0 +1,60 @@
+#!/usr/bin/env python
+
+####+BEGIN: b:prog:file/particulars :authors ("./inserts/authors-mb.org")
+""" #+begin_org
+* *[[elisp:(org-cycle)][| Particulars |]]* :: Authors, version
+** This File: /bisos/git/bxRepos/bisos-pip/kafka/py3/bin/kafbat-ui-sysd.pcs
+** Authors: Mohsen BANAN, http://mohsen.banan.1.byname.net/contact
+#+end_org """
+####+END:
+
+""" #+begin_org
+* Panel::  [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+The kafbat-ui.service unit: Kafbat UI, the web UI of kafka.service, configured
+entirely through /etc/default/kafbat-ui (Spring Boot environment variables).
+Wants= rather than Requires= kafka.service: the UI should stay up, and show the
+broker as down, while kafka.service is restarted.
+#+end_org """
+
+from bisos.debian import systemd_seedInfo
+from bisos.debian import systemd_seed as systemd_seed  # noqa
+
+from bisos.basics import pathPlus
+from bisos.kafka.kafkaInfo import kafkaInfo, sysdServiceLines
+
+def sysdUnitFileFunc() -> str | None:
+    """Produce the unit file as a string."""
+
+    if ( javaPath := pathPlus.whichBinPath("java",)
+    ) is None: return None
+
+    if not kafkaInfo.kafbatJar.exists():
+        return None
+
+    # --add-opens: Kafbat UI's JMX metrics collector needs javax.rmi.ssl, which
+    # Java 17+ no longer opens by default.
+    templateStr = f"""
+[Unit]
+Description=Kafbat UI (web UI for Apache Kafka)
+After=network.target kafka.service
+Wants=kafka.service
+
+[Service]
+Type=simple
+{sysdServiceLines(kafkaInfo.kafbatEnvFile)}WorkingDirectory={kafkaInfo.kafbatDir}
+ExecStart={javaPath} {kafkaInfo.kafbatJavaOpts} --add-opens java.rmi/javax.rmi.ssl=ALL-UNNAMED -jar {kafkaInfo.kafbatJar}
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+"""
+    return templateStr
+
+systemd_seedInfo.setup(
+    seedType="sysdSysUnit",
+    sysdUnitName="kafbat-ui",
+    sysdUnitFileFunc=sysdUnitFileFunc,
+)

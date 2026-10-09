@@ -1,0 +1,37 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* Panel::  [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+kafka-cbs.pcs
+cbs: Capability Bundle Specification  -- Based on a cba-sysd.cs seed
+ws: An Web Service  --- /Service Component/ --- Kafbat UI as kafka.here
+n:  No Data    -- Materialization is purely based on Realm-BPO
+p:  Platform    -- Materialization is based on Platform-BPO (Site-BPO is not used)
+
+The bundle: kafka-sbom.pcs (JRE, Kafka, Kafbat UI, config, storage format),
+the kafka and kafbat-ui units, and kafka-assemble.cs (kafka.here dns + nginx vhost).
+#+end_org """
+
+from bisos.capability import cba_sysd_seed
+from bisos.capability import cba_seed
+
+cba_seed.setup(
+    seedType="systemd",  # Extend using cba_sysd_seed.setup
+    loader=None,
+    sbom="kafka-sbom.pcs",
+    assemble="kafka-assemble.cs",
+    materialize=None,
+)
+
+# Order is load-bearing: the broker first, then the UI that connects to it.
+sysdUnitsListKafka = [
+    cba_sysd_seed.sysdUnit("kafka",      "kafka-sysd.pcs"),
+    cba_sysd_seed.sysdUnit("kafbat-ui",  "kafbat-ui-sysd.pcs"),
+]
+
+cba_sysd_seed.setup(
+    sysdUnitsList=sysdUnitsListKafka,
+)
+
+cba_sysd_seed.plantWithWhich("cba-sysd.cs")

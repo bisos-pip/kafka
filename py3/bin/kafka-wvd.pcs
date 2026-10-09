@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* ~[Summary]~ :: A =PlantedCmndService= for kafka.here NGINX virtual-host (capWebVd) --- fronts Kafbat UI
+#+end_org """
+
+from bisos.b import cs
+import collections
+
+from bisos.csSeed import seedsLib
+
+from bisos.webCap import capWebVd_seed  # noqa: F401  # _atExit_
+
+from bisos.webCap import capWebVd_seedInfo
+from bisos.kafka.kafkaInfo import kafkaInfo
+
+serverName = kafkaInfo.fqdn
+# Not socket.gethostbyname(serverName), as airflow-wvd.pcs does: Kafbat UI has no
+# authentication, so it binds kafkaInfo.listenIp (loopback) only, and nginx must
+# proxy to that address rather than to the kafka.here one.
+proxyIp = kafkaInfo.listenIp
+proxyPort = kafkaInfo.kafbatPortNu
+
+def wvdConfigFunc() -> str:
+    """webVd_nginxSites.atPortSite() plus unbuffered proxying.
+
+    Kafbat UI streams topic messages as Server-Sent Events. With nginx's default
+    proxy_buffering the message browser stalls until a buffer fills.
+    """
+    return f"""\
+server {{
+    listen 80;
+    server_name {serverName};
+
+    location / {{
+        proxy_pass http://{proxyIp}:{proxyPort};
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+}}
+"""
+
+capWebVd_seedInfo.setup(
+    serverName=serverName,
+    proxyPort=proxyPort,
+    wvdConfigFunc=wvdConfigFunc,
+)
+
+from bisos.csSeed import csCmndsList_seedInfo
+csCmnd = csCmndsList_seedInfo.csCmnd
+
+csCmndsList = [
+    csCmnd("configFileStdout", pars={'cls': 'configFile_nginxVd'},),
+    csCmnd("configFileUpdate", pars={'cls': 'configFile_nginxVd', 'runAs': 'root'},),
+    csCmnd("webVd_enable",),
+    csCmnd("webVd_verify",),
+    csCmnd("webVd_resolve",),
+    csCmnd("webVd_fqdnPing",),
+]
+
+csCmndsList_seedInfo.setup(
+    csCmndsList=csCmndsList,
+)

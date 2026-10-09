@@ -1,0 +1,236 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* Panel::  [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+kafka-sbom.pcs: software bill of materials of the Kafka hereWeb capability ---
+Apache Kafka (single node, KRaft) and Kafbat UI, its web UI.
+Debian packages neither, so only the JRE comes from apt. Kafka (binary tarball)
+and Kafbat UI (jar) are fetched from upstream at pinned versions, verified
+against pinned checksums, by func-bearing pseudo-packages.
+#+end_org """
+
+from bisos import b
+from bisos.b import cs
+from bisos.b import b_io
+
+from bisos.sbom import pkgsSeed  # pkgsSeed.plantWithWhich("seedSbom.cs")
+from bisos.kafka.kafkaInfo import (
+    kafkaInfo, serverPropertiesContent, envFileContent, kafbatEnvFileContent,
+)
+
+ap = pkgsSeed.aptPkg
+
+# The facts of the installation --- account, versions, checksums, paths, env files,
+# ports --- come from bisos.kafka.kafkaInfo, the one source the units, kafkaAdmin.cs,
+# dns and vhost read too.
+#
+# Each func-bearing pseudo-package below is registered in aptPkgsList, so sbom_csu's
+# aptPkgs_update() calls it instead of apt-get install. Its gate,
+# aptPkg_isInstalled("<name>"), can never be true --- so each runs on *every*
+# sbom_fullUpdate and must stay idempotent. Ordering in aptPkgsList is load-bearing.
+
+
+def _bash(script: str) -> b.op.Outcome:
+    outcome = b.subProc.WOpW(invedBy=None, log=1).bash(script)
+    if outcome.isProblematic():
+        b_io.eh.badOutcome(outcome)
+    return outcome
+
+
+def kafkaAcctSetup():
+    """The kafka system account and the dirs it must own. Not an apt package."""
+    return _bash(f"""
+set -e
+# 1. System account, no login shell -- only when absent, useradd exits 9 otherwise
+id {kafkaInfo.acctName} >/dev/null 2>&1 || \\
+    sudo useradd -r -M -d {kafkaInfo.dataDir.parent} -s /usr/sbin/nologin {kafkaInfo.acctName}
+
+# 2. Data and application-log dirs belong to the account. Binaries do not (see kafkaDistSetup).
+sudo mkdir -p {kafkaInfo.dataDir} {kafkaInfo.logDir} {kafkaInfo.confDir} {kafkaInfo.installBase}
+sudo chown -R {kafkaInfo.acctName}:{kafkaInfo.acctName} {kafkaInfo.dataDir.parent} {kafkaInfo.logDir}
+sudo chmod 750 {kafkaInfo.dataDir}
+""")
+
+
+def kafkaDistSetup():
+    """The pinned Apache Kafka tarball, verified and unpacked. Not an apt package.
+
+    Unpacked once per version into installBase/<distName>, root-owned; then
+    installBase/current is pointed at it. A tarball whose SHA-512 does not match
+    kafkaInfo.distSha512 is discarded and nothing is unpacked.
+    """
+    return _bash(f"""
+set -e
+if [ ! -x {kafkaInfo.distDir}/bin/kafka-server-start.sh ] ; then
+    tmpDir=$(mktemp -d)
+    trap 'rm -rf "$tmpDir"' EXIT
+    curl -fsSL -o "$tmpDir/{kafkaInfo.distName}.tgz" {kafkaInfo.distUrl}
+    echo "{kafkaInfo.distSha512}  $tmpDir/{kafkaInfo.distName}.tgz" | sha512sum -c --quiet -
+    sudo tar -xzf "$tmpDir/{kafkaInfo.distName}.tgz" -C {kafkaInfo.installBase}
+    sudo chown -R root:root {kafkaInfo.distDir}
+fi
+
+# kafka-run-class.sh mkdirs $LOG_DIR, defaulting to <dist>/logs, for every tool
+# invocation. Pointing that at the account-owned logDir keeps the dist read-only.
+[ -e {kafkaInfo.distDir}/logs ] || sudo ln -s {kafkaInfo.logDir} {kafkaInfo.distDir}/logs
+
+sudo ln -sfn {kafkaInfo.distDir} {kafkaInfo.homeLink}
+""")
+
+
+def kafkaConfSetup():
+    """server.properties, /etc/default/kafka, and a formatted KRaft storage. Not an apt package.
+
+    The two config files are written only when absent, so hand overrides survive
+    re-runs; kafkaAdmin.cs -i driftCheck reports how they differ from the generators.
+    Storage is formatted only when meta.properties is absent: formatting again
+    would mint a new cluster id and orphan every topic.
+    """
+    return _bash(f"""
+set -e
+if [ ! -f {kafkaInfo.serverProps} ] ; then
+    sudo tee {kafkaInfo.serverProps} >/dev/null <<'KAFKA_PROPS_EOF'
+{serverPropertiesContent()}KAFKA_PROPS_EOF
+fi
+sudo chown root:{kafkaInfo.acctName} {kafkaInfo.serverProps}
+sudo chmod 640 {kafkaInfo.serverProps}
+
+if [ ! -f {kafkaInfo.envFile} ] ; then
+    sudo tee {kafkaInfo.envFile} >/dev/null <<'KAFKA_ENV_EOF'
+{envFileContent()}KAFKA_ENV_EOF
+fi
+sudo chown root:{kafkaInfo.acctName} {kafkaInfo.envFile}
+sudo chmod 640 {kafkaInfo.envFile}
+
+# dataDir is kafka-owned 750: the invoker cannot see into it, so the test is run as root.
+if ! sudo test -f {kafkaInfo.metaProps} ; then
+    clusterId=$(sudo -u {kafkaInfo.acctName} env LOG_DIR={kafkaInfo.logDir} \\
+        {kafkaInfo.binPath("kafka-storage")} random-uuid)
+    sudo -u {kafkaInfo.acctName} env LOG_DIR={kafkaInfo.logDir} \\
+        {kafkaInfo.binPath("kafka-storage")} format --standalone \\
+        -t "$clusterId" -c {kafkaInfo.serverProps}
+fi
+""")
+
+
+def kafbatUiSetup():
+    """The pinned Kafbat UI jar, verified, and /etc/default/kafbat-ui. Not an apt package."""
+    return _bash(f"""
+set -e
+sudo mkdir -p {kafkaInfo.kafbatDir}
+if [ ! -f {kafkaInfo.kafbatJar} ] ; then
+    tmpDir=$(mktemp -d)
+    trap 'rm -rf "$tmpDir"' EXIT
+    curl -fsSL -o "$tmpDir/kafbat.jar" {kafkaInfo.kafbatUrl}
+    echo "{kafkaInfo.kafbatSha256}  $tmpDir/kafbat.jar" | sha256sum -c --quiet -
+    sudo install -o root -g root -m 644 "$tmpDir/kafbat.jar" {kafkaInfo.kafbatJar}
+fi
+
+if [ ! -f {kafkaInfo.kafbatEnvFile} ] ; then
+    sudo tee {kafkaInfo.kafbatEnvFile} >/dev/null <<'KAFBAT_ENV_EOF'
+{kafbatEnvFileContent()}KAFBAT_ENV_EOF
+fi
+sudo chown root:{kafkaInfo.acctName} {kafkaInfo.kafbatEnvFile}
+sudo chmod 640 {kafkaInfo.kafbatEnvFile}
+""")
+
+
+aptPkgsList = [
+    ap(kafkaInfo.jrePkg),           # Kafka 4.x needs Java 17+; Kafbat UI runs on 21 too
+    ap("curl"),                     # Fetches the upstream tarball and jar
+    ap("kafkaAcctSetup", func=kafkaAcctSetup),
+    ap("kafkaDistSetup", func=kafkaDistSetup),    # after curl and the account dirs
+    ap("kafkaConfSetup", func=kafkaConfSetup),    # after the dist: format needs kafka-storage.sh
+    ap("kafbatUiSetup", func=kafbatUiSetup),
+]
+
+# No pip packages: Python clients (confluent-kafka, kafka-python, ...) install into each
+# consumer's own virtenv, through that consumer's sbom.
+
+pkgsSeed.setup(
+    aptPkgsList=aptPkgsList,
+)
+
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "readme" :extent "verify" :comment "Describe" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<readme>>  *Describe*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class readme(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Describe"""
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        descriptionStr = f"""\
+** Scope: Apache Kafka {kafkaInfo.version} -- single node, KRaft combined broker+controller --
+   and Kafbat UI {kafkaInfo.kafbatVersion}, its web UI, browsed as {kafkaInfo.baseUrl}
+
+** What this installs:
+  1) apt packages: {kafkaInfo.jrePkg} and curl.
+  2) kafkaAcctSetup: the {kafkaInfo.acctName} system account, {kafkaInfo.dataDir}
+     and {kafkaInfo.logDir}.
+  3) kafkaDistSetup: {kafkaInfo.distUrl}
+     verified by SHA-512, unpacked root-owned into {kafkaInfo.distDir},
+     with {kafkaInfo.homeLink} pointing at it.
+  4) kafkaConfSetup: {kafkaInfo.serverProps} and {kafkaInfo.envFile} (written only
+     when absent), then kafka-storage.sh format --standalone (only when
+     {kafkaInfo.metaProps} is absent).
+  5) kafbatUiSetup: {kafkaInfo.kafbatUrl}
+     verified by SHA-256, as {kafkaInfo.kafbatJar}, and {kafkaInfo.kafbatEnvFile}.
+
+** Listeners (all loopback; ports from bisos.banna):
+     broker      PLAINTEXT://{kafkaInfo.bootstrapServers}
+     controller  CONTROLLER://{kafkaInfo.controllerAddr}
+     Kafbat UI   {kafkaInfo.kafbatLocalUrl}   (nginx: {kafkaInfo.baseUrl})
+
+** What this does NOT do:
+  - It does not start anything. The kafka and kafbat-ui units are declared by
+    kafka-cbs.pcs, which also runs this sbom.
+  - It installs no client libraries; those belong to each consumer's sbom.
+  - Kafbat UI has no authentication. It listens on loopback only.
+
+       kafka-sbom.pcs -i sbom_fullUpdate\
+"""
+        print(descriptionStr)
+
+        return cmndOutcome.set(
+            opError=b.op.OpError.Success,
+            opResults=None,
+        )
+
+
+def examples_csu() -> b.op.Outcome:
+    """Common Usage Examples for this Command-Service Unit"""
+
+    cmnd = cs.examples.cmndEnter
+    literal = cs.examples.execInsert
+
+    cmndOutcome = b.op.Outcome()
+
+    cs.examples.menuChapter('*Kafka and Kafbat UI -- sbom Examples*')
+    cmnd('readme', comment=" # An overview short description")
+
+    cs.examples.menuChapter('*Installation*')
+    literal("kafka-sbom.pcs -i sbom_fullUpdate")
+
+    cs.examples.menuChapter('*Verify Installation*')
+    literal("java -version")
+    literal(f"ls -l {kafkaInfo.homeLink}")
+    literal(f"{kafkaInfo.binPath('kafka-topics')} --version")
+    literal(f"ls -l {kafkaInfo.kafbatJar}")
+    literal(f"sudo cat {kafkaInfo.metaProps}   # cluster.id -- storage is formatted")
+
+    cs.examples.menuChapter('*End-Of Kafka and Kafbat UI -- sbom Examples*')
+    return cmndOutcome
