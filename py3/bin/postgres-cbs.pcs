@@ -1,0 +1,49 @@
+#!/usr/bin/env python
+
+####+BEGIN: b:prog:file/particulars :authors ("./inserts/authors-mb.org")
+""" #+begin_org
+* *[[elisp:(org-cycle)][| Particulars |]]* :: Authors, version
+** This File: /bisos/core/bsip/bin/airflow-cbs-is-np-sysd.cs
+** Authors: Mohsen BANAN, http://mohsen.banan.1.byname.net/contact
+#+end_org """
+####+END:
+
+""" #+begin_org
+* Panel::  [[file:/bisos/panels/bisos-apps/NOTYET/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+airflow-cbs-is-np-sysd.cs
+cbs: Capability Bundle Specification  -- Based on a cba-sysd.cs seed
+ws: An Web Service  --- /Service Component/
+n:  No Data    -- Materialization is purely based on Realm-BPO
+p:  Platform    -- Materialization is based on Platform-BPO (Site-BPO is not used)
+#+end_org """
+
+
+from bisos.capability import cba_sysd_seed
+from bisos.capability import cba_seed
+
+
+cba_seed.setup(
+    seedType="systemd",  # Extend using cba_sysd_seed.setup
+    loader=None,
+    sbom="airflow-sbom.pcs",
+    assemble="airflow-assemble.cs",
+    materialize=None,
+)
+
+sysdUnitsListAirflow = [
+    cba_sysd_seed.sysdUnit("airflow-db",            "airflow-db-sysd.pcs"),
+    cba_sysd_seed.sysdUnit("airflow-webserver",     "airflow-webserver-sysd.pcs"),
+    cba_sysd_seed.sysdUnit("airflow-scheduler",     "airflow-scheduler-sysd.pcs"),
+    cba_sysd_seed.sysdUnit("airflow-triggerer",     "airflow-triggerer-sysd.pcs"),
+    # Airflow 3 parses DAG files in a standalone process, not in the scheduler.
+    # Omitting this yields an installation where every unit is healthy and no
+    # DAG is ever registered --- see airflow-dag-processor-sysd.pcs.
+    cba_sysd_seed.sysdUnit("airflow-dag-processor", "airflow-dag-processor-sysd.pcs"),
+]
+
+cba_sysd_seed.setup(
+    sysdUnitsList=sysdUnitsListAirflow,
+)
+
+cba_sysd_seed.plantWithWhich("cba-sysd.cs")

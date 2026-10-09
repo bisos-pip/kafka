@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+
+####+BEGIN: b:prog:file/particulars :authors ("./inserts/authors-mb.org")
+""" #+begin_org
+* *[[elisp:(org-cycle)][| Particulars |]]* :: Authors, version
+** This File: /bisos/asc/web/bin/airflow-db-sysd.pcs
+** Authors: Mohsen BANAN, http://mohsen.banan.1.byname.net/contact
+#+end_org """
+####+END:
+
+""" #+begin_org
+* Panel::  [[file:/bisos/panels/bisos-apps/NameOfThePanelComeHere/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+#+end_org """
+
+from bisos.debian import systemd_seedInfo
+from bisos.debian import systemd_seed as systemd_seed  # noqa
+
+from bisos.basics import pathPlus
+
+def sysdUnitFileFunc() -> str | None:
+    """Produce the unit file as a string."""
+
+    if ( execPath := pathPlus.whichBinPath("airflow",)
+    ) is None: return None
+
+    templateStr = f"""
+[Unit]
+Description=Airflow DB Migration
+# The metadata DB is PostgreSQL (see airflow-sbom.pcs airflowPostgresSetup).
+# This is the only unit that needs to name it: airflow-db is the first thing
+# to touch the database, and the four long-running units all carry
+# Requires=/After=airflow-db.service, so ordering reaches them transitively
+# -- airflow-db is Type=oneshot+RemainAfterExit, so "after airflow-db" means
+# after db migrate has completed, which is necessarily after postgres is up.
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=airflow
+Group=airflow
+EnvironmentFile=/etc/default/airflow
+ExecStart={execPath} db migrate
+
+[Install]
+WantedBy=multi-user.target
+"""
+    return templateStr
+
+systemd_seedInfo.setup(
+    seedType="sysdSysUnit",
+    sysdUnitName="airflow-db",
+    sysdUnitFileFunc=sysdUnitFileFunc,
+)
