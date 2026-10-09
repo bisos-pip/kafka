@@ -82,6 +82,12 @@ SCHEDULED: <2026-06-09 Tue>
 - NOT verified: an actual sbom_fullUpdate / cbs_materialize on a host.
 - Left for Blee: py3/setup.py scripts dblock still lists airflow files (bx-dblock needs an
   emacs server); particulars/csInfo dblock bodies in the .cs files still name airflow.
+- Follow-up (banna, commit 115db49): /etc/hosts .here IPs are now stored per port
+  (hereIp/hereName) rather than derived from sorted position, which would have renumbered
+  six existing names. kafka.here = 127.0.22.113 (Kafbat UI, port 24009); broker and
+  controller have no .here name. Dry run showed exactly one added line; /etc/hosts then
+  updated via kafka-here-dns.pcs -i dnsCap_update (backup /etc/hosts.20261009224000).
+- Still to do before /bx-done 1.1: a real kafka-cbs.pcs -i cbs_materialize on a host.
 ** -
 
 

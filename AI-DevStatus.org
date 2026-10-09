@@ -22,23 +22,103 @@ architecture, what works, what is untested and the design decisions made so far.
 This file is maintained by Claude. Updates are typically triggered by the
 =/bx-update-status= slash command, after major interactions, or before a release.
 
-Note to a fresh Claude: this file is intentionally sparse at project start.
-Fill in the sections below when asked to update, following the structure provided.
+Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
 
 * Current State
-  [To be filled in by Claude after first substantive interaction]
+  - bisos.kafka is a working starting point: Apache Kafka 4.3.1 (single node,
+    KRaft combined broker+controller) plus Kafbat UI 1.5.0 as its web UI, packaged
+    as a hereWeb-collective CBS/CBM. Committed as 9c71a56.
+  - The "copy of postgres" (de22627) turned out to be mostly an older bisos.airflow
+    under postgres file names. Everything was rewritten fresh, using the current
+    ../airflow (hereWeb) as the structural model --- not ../postgres (bedrock).
+  - Companion change in bisos.banna (committed 115db49, installed editable in bisos3).
+  - /etc/hosts on this host already has =127.0.22.113  kafka.here= (via
+    kafka-here-dns.pcs -i dnsCap_update; backup /etc/hosts.20261009224000).
+  - NOT yet done on any host: kafka-sbom.pcs -i sbom_fullUpdate / kafka-cbs.pcs -i cbs_materialize.
+  - TODO <<1.1>> is left as TODO, pending a real materialization (then /bx-done 1.1).
 
 * Architecture
-  [Key components, file structure, entry points]
+  - =py3/bisos/kafka/kafkaInfo.py= --- the single source of facts. Everything else
+    imports it: pinned versions + checksums (Kafka SHA-512 from Apache, Kafbat SHA-256
+    from the GitHub asset digest), paths, banna ports, generators of
+    /etc/kafka/server.properties, /etc/default/kafka, /etc/default/kafbat-ui and of the
+    units' identity lines, and kvDrift()/unitDrift() for driftCheck.
+  - Layout on a host:
+    | /opt/kafka/kafka_2.13-4.3.1, /opt/kafka/current -> it | root, read-only     |
+    | /opt/kafka/kafbat/api-v1.5.0.jar                      | root               |
+    | /etc/kafka/server.properties, /etc/default/kafka{,bat-ui} | root:kafka 640 |
+    | /var/lib/kafka/data (KRaft meta + partitions), /var/log/kafka | kafka 750/755 |
+  - =py3/bin/=:
+    - kafka-cbs.pcs (CBS: sbom + units [kafka, kafbat-ui] + kafka-assemble.cs)
+    - cbmProc-kafka.spcs (CBM pointer; leaf sys/cbm/collective/hereWeb/kafka/)
+    - kafka-sbom.pcs: apt openjdk-21-jre-headless + curl, then func-bearing pseudo-pkgs
+      kafkaAcctSetup, kafkaDistSetup, kafkaConfSetup (writes configs only when absent;
+      formats storage only when meta.properties absent), kafbatUiSetup. All idempotent.
+    - kafka-sysd.pcs, kafbat-ui-sysd.pcs (both User=kafka, EnvironmentFile=...)
+    - kafka-here-dns.pcs, kafka-wvd.pcs, kafka-assemble.cs (hereDns + webVirtDom)
+    - kafkaAdmin.cs (hostInfo, servicesInfo, topicsInfo, consumerGroupsInfo,
+      driftCheck, fullUpdate), quickKafka.cs (cheat sheet)
+  - Ports (bisos.banna tcpPorts.py): kafka=24007 broker, kafkaController=24008,
+    kafbatUi=24009. All listeners bind 127.0.0.1.
+  - kafka.here -> 127.0.22.113 -> nginx :80 -> proxy_pass 127.0.0.1:24009 (Kafbat UI).
 
 * What Works
-  [Verified functionality]
+  Verified read-only, from source (not pip-installed), on Debian 13:
+  - Every .cs/.pcs/.spcs menu runs; kafka-sbom.pcs -i readme; kafkaAdmin.cs all Cmnds
+    (driftCheck reports "not installed" cleanly); quickKafka.cs.
+  - Both unit files and the nginx vhost render as intended.
+  - The four sbom bash scripts pass bash -n.
+  - tests/verify.sh python checks (Cmnd presence; banna ports; generator invariants) pass.
+  - Upstream URLs return 200 (archive.apache.org Kafka tarball, GitHub Kafbat jar).
+  - banna: regenerated /etc/hosts block identical to before plus the one kafka line;
+    hereIpOf("kafka") == 127.0.22.113; duplicate-IP check raises.
 
 * What Is Untested
-  [Known gaps]
+  - The actual install and run: sbom_fullUpdate (download, checksum, unpack, account,
+    kafka-storage.sh format --standalone), unit start, Kafbat UI connecting to the
+    broker, nginx vhost (webVirtDom), cbm_materialize at the planted leaf.
+  - Kafbat UI on Java 21: docs found say 17+; newer JDKs reported working; not run here.
+  - nginx proxy_buffering off for Kafbat's SSE message streaming --- reasoned, not observed.
+  - tests/verify.sh end to end (it needs lpDo and bisos.kafka installed).
+
+* Pending, Outside This Session's Reach
+  - py3/setup.py scripts dblock still lists airflow files: regenerate in Blee
+    (bx-dblock -i dblockUpdateFiles setup.py needs a running emacs server).
+  - Generated dblock bodies (particulars / csInfo) in kafkaAdmin.cs, quickKafka.cs,
+    kafka-assemble.cs and the panel .sh files still name airflow/siteRegistrars; the
+    panel's terseTreeNavigator lists airflow sub-panels. All fixed by a Blee dblock update.
+  - bisos.kafka is not pip-installed. Until it is (pip install -e py3, after setup.py is
+    regenerated), running the planted files needs bisos.kafka on the path. Testing
+    workaround used: a scratch dir containing bisos/kafka -> py3/bisos/kafka, on PYTHONPATH.
+    Do NOT put py3/ itself on PYTHONPATH: py3/bisos/__init__.py (pkg_resources
+    declare_namespace) shadows the native bisos namespace and breaks every bisos import.
 
 * Key Design Decisions
-  [Non-obvious choices and their rationale]
+  - hereWeb (like airflow), not bedrock (like postgres): kafka has a web UI at kafka.here.
+  - Upstream binaries, pinned + checksummed, in kafkaInfo: Debian packages neither Kafka
+    nor Kafbat UI. Bumping a version means bumping its checksum; a mismatch aborts the sbom.
+    Fetched from archive.apache.org (downloads.apache.org keeps only recent releases).
+  - Kafbat UI as a plain jar under systemd, no Docker.
+  - Loopback-only listeners: Kafbat UI has no authentication. Hence kafka-wvd.pcs proxies to
+    kafkaInfo.listenIp (127.0.0.1), NOT socket.gethostbyname(fqdn) as airflow-wvd.pcs does.
+  - Single node: every internal-topic replication factor is 1 (stock 3 would leave
+    __consumer_offsets uncreatable). controller.quorum.bootstrap.servers, format --standalone.
+  - Config files written only when absent (hand overrides survive); kafkaAdmin.cs -i driftCheck
+    reports drift instead of overwriting --- same pattern as airflow's /etc/default/airflow.
+  - Storage formatted only when meta.properties is absent; checked with =sudo test= because
+    dataDir is kafka-owned 750 (a plain [ -f ] by the invoker always sees it missing).
+  - kafbat-ui Wants= (not Requires=) kafka.service: the UI stays up while the broker restarts.
+  - No ExecStop= on kafka.service: systemd SIGTERM is Kafka's graceful shutdown;
+    kafka-server-stop.sh signals every Kafka on the host. SuccessExitStatus=143.
+  - nginx vhost written in kafka-wvd.pcs (not webVd_nginxSites.atPortSite) to add
+    proxy_buffering off + proxy_http_version 1.1.
+  - banna (out-of-chain record: commit 115db49 in bisos-pip/banna, under git):
+    /etc/hosts IPs are now stored per port (TcpPortNuInfo.hereIp/hereName) instead of
+    derived from sorted position --- the old scheme would have shifted six existing
+    .here names by 3 when the kafka ports were added. Existing names keep their IPs;
+    kafbatUi carries hereName="kafka"; the broker/controller ports have no .here name;
+    _dev ports keep theirs (Mohsen's decision). Import-time check rejects duplicate IP/name.
+    tcpPorts.hereIpOf() lets wvd files avoid depending on /etc/hosts being current.
 
 # Local Variables:
 # eval: (setq-local toc-org-max-depth 4)
