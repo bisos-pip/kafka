@@ -119,6 +119,12 @@ Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
     kafbatUi carries hereName="kafka"; the broker/controller ports have no .here name;
     _dev ports keep theirs (Mohsen's decision). Import-time check rejects duplicate IP/name.
     tcpPorts.hereIpOf() lets wvd files avoid depending on /etc/hosts being current.
+  - The kafka account's uid/gid = 503 come from bisos.banna.sysAccts (banna Stage 3,
+    record in banna's AI-WorkPlan.org), not from useradd's auto-selection, so they are
+    the same on every platform. kafka-sbom.pcs uses sysAccts.useraddScript(): it creates
+    the account with 503 when absent, only warns if an existing kafka account has other
+    numbers, and refuses if 503 is held by someone else. bisos.banna's registry range is
+    500-999 without touching /etc/login.defs (Mohsen's decision).
 
 # Local Variables:
 # eval: (setq-local toc-org-max-depth 4)

@@ -15,6 +15,7 @@ from bisos.b import cs
 from bisos.b import b_io
 
 from bisos.sbom import pkgsSeed  # pkgsSeed.plantWithWhich("seedSbom.cs")
+from bisos.banna import sysAccts
 from bisos.kafka.kafkaInfo import (
     kafkaInfo, serverPropertiesContent, envFileContent, kafbatEnvFileContent,
 )
@@ -39,12 +40,17 @@ def _bash(script: str) -> b.op.Outcome:
 
 
 def kafkaAcctSetup():
-    """The kafka system account and the dirs it must own. Not an apt package."""
+    """The kafka system account and the dirs it must own. Not an apt package.
+
+    The uid/gid are not left to useradd: bisos.banna.sysAccts assigns them, so the
+    account has the same numbers on every BISOS platform. useraddScript() creates it
+    when absent, and refuses (rather than picking another number) if the registered
+    uid/gid is already taken.
+    """
     return _bash(f"""
 set -e
-# 1. System account, no login shell -- only when absent, useradd exits 9 otherwise
-id {kafkaInfo.acctName} >/dev/null 2>&1 || \\
-    sudo useradd -r -M -d {kafkaInfo.dataDir.parent} -s /usr/sbin/nologin {kafkaInfo.acctName}
+# 1. System account with its banna-registered uid/gid, no login shell
+{sysAccts.useraddScript(kafkaInfo.acctName)}
 
 # 2. Data and application-log dirs belong to the account. Binaries do not (see kafkaDistSetup).
 sudo mkdir -p {kafkaInfo.dataDir} {kafkaInfo.logDir} {kafkaInfo.confDir} {kafkaInfo.installBase}
@@ -179,7 +185,8 @@ class readme(cs.Cmnd):
 
 ** What this installs:
   1) apt packages: {kafkaInfo.jrePkg} and curl.
-  2) kafkaAcctSetup: the {kafkaInfo.acctName} system account, {kafkaInfo.dataDir}
+  2) kafkaAcctSetup: the {kafkaInfo.acctName} system account, with uid/gid
+     {sysAccts.sysAcctOf(kafkaInfo.acctName).uid} from bisos.banna.sysAccts, {kafkaInfo.dataDir}
      and {kafkaInfo.logDir}.
   3) kafkaDistSetup: {kafkaInfo.distUrl}
      verified by SHA-512, unpacked root-owned into {kafkaInfo.distDir},

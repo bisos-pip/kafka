@@ -75,6 +75,7 @@ else:
 
 lpDo python3 -c "
 import sys
+from bisos.banna import sysAccts
 from bisos.kafka.kafkaInfo import (
     kafkaInfo, serverPropertiesContent, envFileContent, kafbatEnvFileContent, kvDrift,
 )
@@ -91,6 +92,8 @@ cases = [
     ('Kafbat UI -> the broker',      kafkaInfo.bootstrapServers in kafbatEnvFileContent()),
     ('drift: identical is clean',    kvDrift(envFileContent(), envFileContent()) == {'missing': [], 'differs': [], 'extra': []}),
     ('drift: extra key reported',    kvDrift(envFileContent() + 'X=1\n', envFileContent())['extra'] == ['X']),
+    ('banna sysAccts: kafka uid',    sysAccts.sysAcctOf(kafkaInfo.acctName).uid == 503),
+    ('banna sysAccts: homeDir',      sysAccts.sysAcctOf(kafkaInfo.acctName).homeDir == str(kafkaInfo.dataDir.parent)),
 ]
 
 failed = 0
