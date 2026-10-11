@@ -62,6 +62,7 @@ sbom, the units, the dns and vhost files and the admin CS all read.
 | What                        | Where                                     | Owner          |
 |-----------------------------+-------------------------------------------+----------------|
 | JRE (=openjdk-21-jre-headless=) | apt                                   | root           |
+| The =kafka= account and group | uid/gid 503, from bisos.banna =sysAccts= | ---         |
 | Kafka 4.3.1 (Scala 2.13)    | =/opt/kafka/kafka_2.13-4.3.1=             | root           |
 | Active Kafka version        | =/opt/kafka/current= -> the above         | root           |
 | Kafbat UI 1.5.0             | =/opt/kafka/kafbat/api-v1.5.0.jar=        | root           |
@@ -70,6 +71,9 @@ sbom, the units, the dns and vhost files and the admin CS all read.
 | Kafbat UI environment       | =/etc/default/kafbat-ui=                  | root:kafka 640 |
 | KRaft metadata + partitions | =/var/lib/kafka/data=                     | kafka          |
 | Application logs            | =/var/log/kafka=                          | kafka          |
+
+The account's numbers come from banna's registry, not from =useradd='s per-host choice,
+so =kafka= is 503 on every platform; the sbom refuses if 503 is already taken.
 
 The three config files are written only when absent, so hand overrides survive
 re-runs of the sbom. =kafkaAdmin.cs -i driftCheck= reports how a live file

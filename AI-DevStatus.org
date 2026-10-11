@@ -25,6 +25,12 @@ This file is maintained by Claude. Updates are typically triggered by the
 Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
 
 * Current State
+  2026-10-10 addendum:
+  - HTTPS and a login for Kafbat UI are not in this repo's scope yet: certificates are designed
+    across packages (bisos.crypt README.org, "BISOS Certificates --- Umbrella Design"; plan in
+    pals/palsWithBcm README.org 1.4 and 1.8). Kafbat stays loopback-only until then.
+  - kafka.here resolves via /etc/hosts (127.0.22.113, from banna hereIp), by design.
+
   - bisos.kafka is a working starting point: Apache Kafka 4.3.1 (single node,
     KRaft combined broker+controller) plus Kafbat UI 1.5.0 as its web UI, packaged
     as a hereWeb-collective CBS/CBM. Committed as 9c71a56.
