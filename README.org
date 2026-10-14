@@ -615,6 +615,7 @@ author/maintainer\\
 ** TODO Remote clients: a non-loopback broker listener, with SASL/TLS
 ** TODO Live status Cmnds in kafkaAdmin.cs (broker reachable, quorum leader) rather than printed examples
 ** TODO A Capability Materialization figure (kafka-graphviz.pcs), as bisos.airflow has
+** TODO List =confluent-kafka= in the package requirements (=setup.py= =requires= is generated; the lazy import in =kafkaFileTransfer.py= is missed by detection, so a pipx install does not bring the client)
 
 
 # Local Variables:

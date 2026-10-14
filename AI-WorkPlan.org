@@ -115,7 +115,7 @@ repository, never here.
 
 *Records mode* --- the base. Each line of a file becomes one Kafka record:
 - Value: the line, /without/ its terminator, exactly as in the file.
-- Key and headers: parameters (=--key=, =--headers k=v,...=). A consumer that knows nothing
+- Key and headers: parameters (=--msgKey=, =--headers k=v,...=). A consumer that knows nothing
   about files consumes these as ordinary rows, with their context in the headers.
 - One transaction per file: a =read_committed= consumer sees all of a file or none of it.
 
@@ -186,18 +186,20 @@ is reserved for one).
 - Parameters --- generic (none is specific to any consumer; =--clientConf= carries security settings):
   |                | =kafkaFileSend.cs=                          | =kafkaFileReceive.cs=                      |
   |----------------+-------------------------------------------+------------------------------------------|
-  | Connection     | =--bootstrap=; security settings from a     | same                                     |
-  |                | file                                      |                                          |
+  | Connection     | =--bootstrap=; =--clientConf= (a file of      | same                                     |
+  |                | security settings)                        |                                          |
   |----------------+-------------------------------------------+------------------------------------------|
-  | Topic          | =--topic=                                   | =--topic= (one or more), =--group=           |
+  | Topic          | =--topic=                                   | =--topic= (comma-separated), =--group=       |
   |----------------+-------------------------------------------+------------------------------------------|
-  | Identity       | =--key=; =--header k=v= (repeatable)          | =--pathTemplate= from headers, e.g.        |
-  |                |                                           | ={host}/{kind}/{run}/data.txt=          |
+  | Identity       | =--msgKey=; =--headers k=v,k=v=; =--idHeaders=; | =--pathTemplate=, e.g.                     |
+  |                | =--attrs=                                   | ={host}/{kind}/{run}/data.txt=               |
   |----------------+-------------------------------------------+------------------------------------------|
-  | Input / output | file path(s)                              | =--outBase=; optional =latest= symlink       |
+  | Input / output | file path(s); =--root= (the logical path is | =--outBase=; =--latest NAME=; =--onExists=     |
+  |                | the path relative to it)                  | (replace, fail or skip)                  |
   |----------------+-------------------------------------------+------------------------------------------|
-  | Behaviour      | one transaction per file; end marker with | =read_committed=; verify; atomic write;    |
-  |                | row count and SHA-256                     | re-delivery rewrites the same file       |
+  | Behaviour      | =--model= (files or records), =--eol=; one    | =read_committed=; verify; atomic write;    |
+  |                | transaction per file; kfx-bof / kfx-eof   | =--idleExit=, =--maxFiles=                   |
+  |                | headers in files mode                     |                                          |
 - *Test target*: our own single-node Kafka (2.3). Other clusters differ only in
   connection settings.
 
@@ -231,13 +233,13 @@ librdkafka/wheel implications for pipx installs.
 
 ** TODO [#A] <<2.3>> Materialize =bisos.kafka= on this host, ready for transactions :aiAndMe:
 Per Stage 1: kafka-sbom.pcs -i sbom_fullUpdate / kafka-cbs.pcs -i cbs_materialize
-have not been run on any host; on 2026-10-12 there was no kafka unit here and
-nothing on 9092. Needs sudo: the user's call.
+had not been run on any host; on 2026-10-12 there was no kafka unit here and
+nothing on 9092. Needs sudo: the user's call (done 2026-10-14, see Results).
 - *Single-node gotcha*: transactions need =transaction.state.log.replication.factor=1=
   and =transaction.state.log.min.isr=1=. The default factor is 3, so on one broker
   the first transactional send fails. Check what =kafkaInfo.py='s server.properties
   generator sets and fix it there if absent.
-- Then close 1.1 with =/bx-done 1.1=.
+- Then close 1.1 with =/bx-done 1.1= (done).
 ----- Results: ------
 - 2026-10-14, by hand on this host (bisos3 editable install; commands from devbin on PATH):
   kafka-sbom.pcs -i sbom_fullUpdate, then kafka-cbs.pcs -i cbs_materialize (which re-ran the
@@ -258,15 +260,17 @@ nothing on 9092. Needs sudo: the user's call.
 
 ** TODO [#A] <<2.4>> Module =kafkaFileTransfer.py=, the csu, and =kafkaFileSend.cs= :aiAndMe:
 Post one or more files, one transaction per file, records = raw lines, key and
-headers from parameters, end marker with row count and SHA-256. Uses the client
+headers from parameters; in files mode the kfx-bof / kfx-eof headers on the first and last record
+(see "The concept"). Uses the client
 from 2.1 and the marker form from 2.2. Verify that =pipx install= of
 =bisos.kafka= exposes both commands (setup.py scripts list is regenerated in Blee).
 ----- Results: ------
 - Built 2026-10-14 with the user's decisions (Send/Receive, two thin .cs over one csu, markers as headers on the
   first and last record, headers on data records): py3/bisos/kafka/kafkaFileTransfer.py (pure logic, lazy
   confluent-kafka import), kafkaFileTransfer_csu.py (Cmnds fileSend, fileReceive), bin/kafkaFileSend.cs,
-  bin/kafkaFileReceive.cs. Ran from devbin symlinks (made by hand); setup.py's scripts and requires
-  (confluent-kafka) still need the Blee dblock update. confluent-kafka 2.16.0 was installed into bisos3 from source
+  bin/kafkaFileReceive.cs. Ran from devbin symlinks (made by hand). setup.py was then regenerated in Blee: its
+  scripts list now has both commands, but its requires still lacks confluent-kafka (the lazy import is missed by
+  detection): OPEN, see README.org "Planned Improvements". confluent-kafka 2.16.0 was installed into bisos3 from source
   against /opt/kafka/librdkafka (the sbom's build) using build-env.sh.
 - Uses confluent-kafka (accepted, 2.1) behind _client() and two small functions (sendFiles, receiveFiles): swappable.
 
@@ -278,8 +282,8 @@ As described in the concept: =read_committed=, buffer, verify, atomic write via
   oldest still-open file; =--idleExit= and =--maxFiles= bound a run; SIGINT/SIGTERM stop it cleanly.
 
 ** TODO [#A] <<2.6>> Test the pair against our own Kafka (2.3) :aiAndMe:
-Cases: a large multi-file sweep at a 5-minute cadence, a failed file (nothing
-visible to =read_committed=), a source killed mid-transaction, a duplicate
+Cases: a large multi-file sweep at a regular cadence, a failed file (nothing
+visible to =read_committed=), a sender killed mid-transaction, a duplicate
 delivery, a byte-for-byte diff of rebuilt files against the originals. Add
 automated checks to tests/ where they can run without a broker.
 ----- Results: ------
