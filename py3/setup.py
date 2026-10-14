@@ -43,7 +43,7 @@ def longDescription():
 # b:py3:pypi:setup/version Arguments  :forSys t :forPyPi t :constant "666"
 ####+BEGIN: b:py3:pypi:setup/version :comment "Auto Detected"
 
-# ./pypiUploadVer DID NOT exist -- forPypiVersion=0.13 -- forLocalVersion=0.1 -- constant=NA
+# ./pypiUploadVer DID NOT exist -- forPypiVersion=0.1 -- forLocalVersion=0.1 -- constant=NA
 def pkgVersion():
         return '0.1'
 
@@ -52,7 +52,7 @@ def pkgVersion():
 # b:py3:pypi:setup/requires :extras ; :requirements "requirements.txt" (bring here requirements.txt)
 ####+BEGIN: b:py3:pypi:setup/requires :extras ()
 
-requires = [
+requires = [ 
 "bisos",
 "bisos.b",
 "bisos.banna",
@@ -73,27 +73,26 @@ requires = [
 # b:py3:pypi:setup/scripts :comment
 ####+BEGIN: b:py3:pypi:setup/scripts :comment ""
 
-scripts = [
-'bin/airflowAdmin.cs',
-'bin/airflow-assemble.cs',
-'bin/airflow-cbs.pcs',
-'bin/airflow-dag-processor-sysd.pcs',
-'bin/airflow-db-sysd.pcs',
-'bin/airflow-here-dns.pcs',
-'bin/airflow-sbom.pcs',
-'bin/airflow-scheduler-sysd.pcs',
-'bin/airflow-triggerer-sysd.pcs',
-'bin/airflow-webserver-sysd.pcs',
-'bin/airflow-wvd.pcs',
-'bin/cbmProc-airflow.spcs',
-'bin/quickAirflow.cs',
+scripts = [ 
+'bin/cbmProc-kafka.spcs',
+'bin/kafbat-ui-sysd.pcs',
+'bin/kafka-assemble.cs',
+'bin/kafka-cbs.pcs',
+'bin/kafka-here-dns.pcs',
+'bin/kafka-sbom.pcs',
+'bin/kafka-sysd.pcs',
+'bin/kafka-wvd.pcs',
+'bin/kafkaAdmin.cs',
+'bin/kafkaFileReceive.cs',
+'bin/kafkaFileSend.cs',
+'bin/quickKafka.cs',
 ]
 ####+END:
 
 # b:py3:pypi:setup/dataFiles :comment
 ####+BEGIN: b:py3:pypi:setup/dataFiles :comment "Instead of ./MANIFEST.in or in pyproject.toml"
 
-data_files = [
+data_files = [ 
 ('',  ['lh-agpl3-LICENSE.txt', '_description.org', 'README.rst']),
 ]
 ####+END:
@@ -102,7 +101,7 @@ data_files = [
 ####+BEGIN: b:py3:pypi:setup/funcArgs :comment "defaults to --auto--"
 
 setuptools.setup(
-    name=pkgName(),  # 'bisos.airflow'
+    name=pkgName(),  # 'bisos.kafka'
     version=pkgVersion(),
     packages=setuptools.find_packages(),
     scripts=scripts,

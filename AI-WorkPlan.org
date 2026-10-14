@@ -53,7 +53,7 @@ Apply the same structure for a kafka service.
 
 * Stage 1 TODOs
 ** +
-** TODO [#A] <<1.1>> Convert both file names and file content from postgres to kafka
+** DONE [#A] <<1.1>> Convert both file names and file content from postgres to kafka
 SCHEDULED: <2026-06-09 Tue>
 :PROPERTIES:
 :ORIGIN: Mohsen
@@ -65,7 +65,7 @@ SCHEDULED: <2026-06-09 Tue>
 - Look at /bisos/core/bsip/bin/*-sbom.pcs for examples of py3/bin/kafka-sbom.pcs
 - Include kafbat UI was a web UI
 - Convert both file names and file content from postgres to kafka
------ Results: ------
+----- AI Results: ------
 - Finding: the "copy of postgres" was mostly an older bisos.airflow under postgres file
   names (only postgres-sbom.pcs/-sysd.pcs had any postgres in them). Rewritten fresh
   for kafka, using current ../airflow (hereWeb) for structure.
@@ -87,7 +87,217 @@ SCHEDULED: <2026-06-09 Tue>
   six existing names. kafka.here = 127.0.22.113 (Kafbat UI, port 24009); broker and
   controller have no .here name. Dry run showed exactly one added line; /etc/hosts then
   updated via kafka-here-dns.pcs -i dnsCap_update (backup /etc/hosts.20261009224000).
-- Still to do before /bx-done 1.1: a real kafka-cbs.pcs -i cbs_materialize on a host.
+- Closed 2026-10-14: materialized by hand on this host (see 2.3 Results): sbom_fullUpdate, then
+  kafka-cbs.pcs -i cbs_materialize; kafka and kafbat-ui active, http://kafka.here 200, driftCheck
+  all agree. Defect found there and fixed: Kafbat UI 1.5.0 needs Java 25, so jrePkg is now
+  openjdk-25-jre-headless. To be repeated by the user on another platform.
+** -
+
+
+* Stage 2: Files over Kafka --- kafkaFileSend.cs / kafkaFileReceive.cs
+
+<<Stage 2>>
+
+Goal: a general-purpose, open facility to carry files through Kafka and rebuild them
+exactly on the other side, developed and tested here against our own single-node
+Kafka. This repo is public and generic: a consumer of these commands keeps its own plan,
+notes and parameters in its own repository.
+
+** The concept: records with headers, and an optional file model on top
+
+Scope (user, 2026-10-14): *not a complete solution*. Lines of limited length, benevolent
+senders. Known limits are listed at the end of this section so they are not rediscovered.
+
+Two scopes are kept apart. =bisos.kafka= is a mechanism, externally public, with no knowledge of
+any consumer: topic, key, header names, identity headers, markers and the output path are all
+parameters. A consumer's needs are met by passing parameters; they live in the consumer's own
+repository, never here.
+
+*Records mode* --- the base. Each line of a file becomes one Kafka record:
+- Value: the line, /without/ its terminator, exactly as in the file.
+- Key and headers: parameters (=--key=, =--headers k=v,...=). A consumer that knows nothing
+  about files consumes these as ordinary rows, with their context in the headers.
+- One transaction per file: a =read_committed= consumer sees all of a file or none of it.
+
+*Files mode* --- optional, on top of records mode: the first and last record of a file carry one
+extra header each, so a consumer /may/ rebuild the file. Rows-only consumers ignore them: the data
+topic stays pure, there are no marker records.
+- =kfx-bof= on the first record (JSON): =v=, =path=, =attrs=, =bytes=, =rows=, =sha256=, =eol=,
+  =finalEol=, =idHeaders=, =hdr=. These are what the sender /declared/ (computed before sending).
+- =kfx-eof= on the last record (JSON): =v=, =path=, =bytes=, =rows=, =sha256=. These are what the
+  sender /observed/ while streaming. If observed differs from declared the file changed during
+  the send and the sender aborts its own transaction.
+- =path= is one logical, relative path with =/= separators (the last component is the file name),
+  so the receiver can reproduce the hierarchy. =attrs= are free key-values for =--pathTemplate=.
+- =idHeaders= names the headers whose values identify the file. The receiver demultiplexes
+  interleaved files (concurrent senders share a partition) by those values; no per-record id.
+- =eol= and =finalEol= let the receiver rebuild the exact bytes although values carry no terminator.
+- =hdr= says how headers are encoded: =kafka= (record headers, the only mode built). A later
+  =prefix= mode (fields inside the value, with a delimiter) can be added without changing the format.
+- Why both markers when transactions exist: a consumer left at the default
+  =isolation.level=read_uncommitted= sees open and aborted transactions; a BOF with no EOF
+  tells it the file is incomplete.
+
+*Receiver* (files mode only; refuses records-mode data): buffers per file until EOF, verifies rows,
+bytes and SHA-256 against both markers, checks the path (relative, no =..=), writes atomically
+(temporary name, then rename) under =--outBase=. Same path and same hash: skipped. Same path,
+different hash: replaced atomically (=--onExists replace|fail|skip=). Optional =--latest NAME=
+points a symlink at the newest directory. Offsets are committed only up to the oldest still-open
+file, so a crash re-reads unfinished files.
+
+*Why build it*: nothing standard does this. =kcat= sends lines and prints records, with no file
+boundaries, atomicity or verification. Kafka's =FileStreamSource= / =FileStreamSink= are demo
+connectors (believed off the default plugin path since Kafka 3.2) and keep no boundaries. Spooldir /
+FilePulse ingest files with metadata, but nothing rebuilds them at the other end. S3 / HDFS sinks do
+not rebuild the producer's exact file per batch. Whole-file transfer over Kafka is usually steered to
+SFTP / S3 or a claim check.
+
+*Post after the file is complete, not line by line as produced* (decided 2026-10-12 in the first
+use case): avoids publishing before validation, avoids transactions open for minutes against the
+60 s default timeout, and keeps producing the file independent of broker health.
+
+*Known limits (by decision)*: lines only (no chunking of binary files or huge lines); one uniform
+line terminator per file; non-empty files only; a file is held in memory by sender and receiver;
+two simultaneous sends of the same identity are not separated; a sender killed mid-transaction
+stalls =read_committed= readers of that partition until =transaction.timeout.ms= (default 60 s);
+path checking is against mistakes, not against a hostile sender; no tree manifest (a =set= attribute
+is reserved for one).
+
+** Placement and packaging (decided 2026-10-12, user)
+
+- The logic: =py3/bisos/kafka/kafkaFileTransfer.py=, a pure module that imports
+  only the Kafka client. (=bisos/kafka/__init__.py= is empty, so it pulls in
+  nothing else at import.)
+- The Cmnd classes =fileSend= and =fileReceive=: =py3/bisos/kafka/kafkaFileTransfer_csu.py=,
+  over the pure module.
+- The commands: =kafkaFileSend.cs= and =kafkaFileReceive.cs= in =py3/bin/=, two thin
+  files that load that one csu, each with its own parameters, readme and examples. Named
+  Send and Receive (user, 2026-10-14): /source/ and /sink/ are Kafka Connect words and
+  clash with the "source" attribute that data records commonly carry ("where the data came from"). One implementation, not
+  one file dispatching on =$0= (user's decision: no invocation-name magic).
+- *pipx, not pip --- how BISOS stays out of the user's runtime*: installing with
+  pipx is like =apt-get=: consumers get executables in an isolated venv and take
+  on nothing at the library level. A consumer's code runs the commands as
+  subprocesses, by name or path, and never imports =bisos.kafka=. =bisos.kafka='s
+  full =install_requires= (=bisos.b=, =banna=, =capability=, =sbom=, =debian=,
+  =webCap=, ...) lands in pipx's private venv, which is acceptable at that level.
+  Considered and set aside: making the provisioning dependencies an optional
+  extra, or splitting the module into its own package.
+- Parameters --- generic (none is specific to any consumer; =--clientConf= carries security settings):
+  |                | =kafkaFileSend.cs=                          | =kafkaFileReceive.cs=                      |
+  |----------------+-------------------------------------------+------------------------------------------|
+  | Connection     | =--bootstrap=; security settings from a     | same                                     |
+  |                | file                                      |                                          |
+  |----------------+-------------------------------------------+------------------------------------------|
+  | Topic          | =--topic=                                   | =--topic= (one or more), =--group=           |
+  |----------------+-------------------------------------------+------------------------------------------|
+  | Identity       | =--key=; =--header k=v= (repeatable)          | =--pathTemplate= from headers, e.g.        |
+  |                |                                           | ={host}/{kind}/{run}/data.txt=          |
+  |----------------+-------------------------------------------+------------------------------------------|
+  | Input / output | file path(s)                              | =--outBase=; optional =latest= symlink       |
+  |----------------+-------------------------------------------+------------------------------------------|
+  | Behaviour      | one transaction per file; end marker with | =read_committed=; verify; atomic write;    |
+  |                | row count and SHA-256                     | re-delivery rewrites the same file       |
+- *Test target*: our own single-node Kafka (2.3). Other clusters differ only in
+  connection settings.
+
+* Stage 2 TODOs
+** +
+** DONE [#A] <<2.1>> Choose the Kafka client library :aiAndMe:
+The model needs transactions: mature in =confluent-kafka=, newer in =kafka-python=.
+Choose on measurement, not on what other code happens to use. Record the choice and the
+librdkafka/wheel implications for pipx installs.
+----- Results: ------
+- 2026-10-14: written up in KafkaUsePython.org. Both kafka-python 3.0.11 and confluent-kafka 2.16.0 passed
+  a transaction test on our broker (commit; aborted records invisible to read_committed); produce 17.7k vs
+  432k records/s against ~10k/s needed. kafka-python 2.0.x, still widely pinned, cannot be imported on
+  Python 3.12 or newer.
+- DECIDED (user, 2026-10-14): confluent-kafka, pinned, behind a small internal interface in
+  kafkaFileTransfer.py. Caveat: Linux wheels lack Kerberos (GSSAPI), solved below.
+- Kerberos resolved (2026-10-14): built from source, both with Debian's librdkafka (2.8.0) and with a pinned
+  librdkafka 2.16.0. A real handshake (SASL_SSL + GSSAPI, private KDC and broker, transactional round trip,
+  two negative cases) passes for confluent-kafka (both builds, and the binding built from the sbom's
+  build-env.sh) and for kafka-python 3.0.11 + gssapi: tests/clientCompare/kerberosHandshakeTest.sh.
+  kafka-sbom.pcs now builds the pinned librdkafka (librdkafkaSetup), verified by SHA-256, into
+  /opt/kafka/librdkafka-2.16.0 and writes build-env.sh. Traps found: a dotless host name picks up the
+  resolver's search domain and the wrong realm; pip reuses a cached wheel built against another library.
+
+** DONE [#A] <<2.2>> Fix the end-of-file marker form :aiAndMe:
+----- Results: ------
+- Decided 2026-10-14 with the user: markers are headers on the first (=kfx-bof=) and last (=kfx-eof=)
+  data record, not marker records and not a control topic. Data records keep their headers; a
+  consumer that ignores files sees plain rows. Contents, declared vs observed, =idHeaders=, =eol= and
+  the receiver rules are in "The concept" above. A control topic can be added later if a consumer wants it.
+
+** TODO [#A] <<2.3>> Materialize =bisos.kafka= on this host, ready for transactions :aiAndMe:
+Per Stage 1: kafka-sbom.pcs -i sbom_fullUpdate / kafka-cbs.pcs -i cbs_materialize
+have not been run on any host; on 2026-10-12 there was no kafka unit here and
+nothing on 9092. Needs sudo: the user's call.
+- *Single-node gotcha*: transactions need =transaction.state.log.replication.factor=1=
+  and =transaction.state.log.min.isr=1=. The default factor is 3, so on one broker
+  the first transactional send fails. Check what =kafkaInfo.py='s server.properties
+  generator sets and fix it there if absent.
+- Then close 1.1 with =/bx-done 1.1=.
+----- Results: ------
+- 2026-10-14, by hand on this host (bisos3 editable install; commands from devbin on PATH):
+  kafka-sbom.pcs -i sbom_fullUpdate, then kafka-cbs.pcs -i cbs_materialize (which re-ran the
+  sbom: idempotent, no re-format). Account 503, /opt/kafka, /etc/kafka, storage formatted,
+  both units enabled, nginx vhost enabled. kafka.service up; broker 24007, controller 24008.
+- Defect found and fixed: Kafbat UI 1.5.0 is compiled for Java 25 (class file 69), not 21 as
+  assumed ("17+" in the docs). kafka-sbom installed openjdk-21 and kafbat-ui crash-looped with
+  UnsupportedClassVersionError. kafkaInfo.jrePkg -> openjdk-25-jre-headless (trixie has it);
+  Kafka 4.3.1 also runs on 25. The 21 JRE was never installed on this host before, so
+  nothing to remove; /usr/bin/java is 25.
+- Verified: kafbat-ui active; GET :24009/api/clusters -> cluster "local" ONLINE, 1 broker,
+  KRAFT; http://kafka.here -> 200; console producer/consumer round trip on a test topic
+  (deleted); kafkaAdmin.cs driftCheck: everything agrees.
+- Transactional send verified 2026-10-14 with kafka-python 3.0.11 and confluent-kafka 2.16.0 (see
+  KafkaUsePython.org, tests/clientCompare/): commit works, aborted records invisible to read_committed,
+  __transaction_state created, single-node settings sufficient.
+- NOT verified: Kafbat's live message view through nginx (proxy_buffering off); a restart-on-reboot.
+
+** TODO [#A] <<2.4>> Module =kafkaFileTransfer.py=, the csu, and =kafkaFileSend.cs= :aiAndMe:
+Post one or more files, one transaction per file, records = raw lines, key and
+headers from parameters, end marker with row count and SHA-256. Uses the client
+from 2.1 and the marker form from 2.2. Verify that =pipx install= of
+=bisos.kafka= exposes both commands (setup.py scripts list is regenerated in Blee).
+----- Results: ------
+- Built 2026-10-14 with the user's decisions (Send/Receive, two thin .cs over one csu, markers as headers on the
+  first and last record, headers on data records): py3/bisos/kafka/kafkaFileTransfer.py (pure logic, lazy
+  confluent-kafka import), kafkaFileTransfer_csu.py (Cmnds fileSend, fileReceive), bin/kafkaFileSend.cs,
+  bin/kafkaFileReceive.cs. Ran from devbin symlinks (made by hand); setup.py's scripts and requires
+  (confluent-kafka) still need the Blee dblock update. confluent-kafka 2.16.0 was installed into bisos3 from source
+  against /opt/kafka/librdkafka (the sbom's build) using build-env.sh.
+- Uses confluent-kafka (accepted, 2.1) behind _client() and two small functions (sendFiles, receiveFiles): swappable.
+
+** TODO [#A] <<2.5>> =kafkaFileReceive.cs= --- rebuild the file tree :aiAndMe:
+As described in the concept: =read_committed=, buffer, verify, atomic write via
+=--pathTemplate= under =--outBase=, optional =latest=, duplicates rewrite.
+----- Results: ------
+- Built with 2.4 (FileAssembler, placeFile, receiveFiles, the fileReceive Cmnd). Offsets are committed only up to the
+  oldest still-open file; =--idleExit= and =--maxFiles= bound a run; SIGINT/SIGTERM stop it cleanly.
+
+** TODO [#A] <<2.6>> Test the pair against our own Kafka (2.3) :aiAndMe:
+Cases: a large multi-file sweep at a 5-minute cadence, a failed file (nothing
+visible to =read_committed=), a source killed mid-transaction, a duplicate
+delivery, a byte-for-byte diff of rebuilt files against the originals. Add
+automated checks to tests/ where they can run without a broker.
+----- Results: ------
+- tests/test_kafkaFileTransfer.py: 26 unit tests, no broker (exact bytes for LF/CRLF/no-final-newline/blank
+  lines/UTF-8/BOM, interleaving, tampering, hostile and malformed markers, placement, latest). A mutation check
+  (verification disabled) fails 3 of them.
+- tests/integration_kafkaFileTransfer.py: 17 checks through the real commands against this host's broker, all
+  passing (about 3 minutes): hierarchy rebuilt byte for byte; duplicate delivery skipped; a rows-only consumer
+  sees the raw lines and headers; records model leaves nothing for the receiver to rebuild; 8 concurrent senders
+  into one partition demultiplexed; a file changed mid-send aborted (nothing visible, next file still sent); a
+  sender killed mid-transaction never visible (readers resumed after transaction.timeout.ms); a hostile ../ path
+  rejected and the good file behind it still received; exit statuses.
+- Defects found and fixed by these tests: (1) a hostile or malformed marker made the receiver exit instead of
+  rejecting that one file (a poison pill); (2) the PyCS main discards a Cmnd's outcome, so a failed Cmnd exited 0:
+  the Cmnds now end with SystemExit(1) after reporting the failure (no framework change).
+- NOT tested: SASL/Kerberos through these commands (clientConf is passed to librdkafka unchanged; the handshake
+  itself was tested separately), very large files, an external Kafka cluster, a sender and receiver on different
+  hosts, long-running receive (hours) with rebalances.
 ** -
 
 

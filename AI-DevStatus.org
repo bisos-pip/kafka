@@ -25,6 +25,19 @@ This file is maintained by Claude. Updates are typically triggered by the
 Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
 
 * Current State
+  2026-10-14 (later): kafkaFileSend.cs / kafkaFileReceive.cs are BUILT and tested (WorkPlan 2.4-2.6): pure module
+  py3/bisos/kafka/kafkaFileTransfer.py, csu kafkaFileTransfer_csu.py, two thin .cs; 26 unit + 17 integration tests pass
+  against this host's broker. Run from hand-made devbin symlinks; confluent-kafka is installed in bisos3 by hand
+  (source build via /opt/kafka/librdkafka/build-env.sh). PENDING for Blee: setup.py scripts + requires
+  (confluent-kafka) regeneration; the .cs/_csu dblocks were hand-written in generated form. Not yet tested through
+  these commands: SASL/Kerberos, external clusters. Consumers keep their own integration plans in their own repositories.
+  2026-10-14 addendum (client side): kafka-sbom.pcs also builds a pinned librdkafka 2.16.0 with Kerberos into
+  /opt/kafka/librdkafka-2.16.0 (build-env.sh for pip builds of confluent-kafka; wheels lack GSSAPI), and installs the
+  build/Kerberos apt packages. tests/clientCompare/ holds a transaction test and kerberosHandshakeTest.sh (private KDC +
+  private SASL_SSL/GSSAPI broker); confluent-kafka and kafka-python+gssapi both pass. Client choice and findings are in
+  KafkaUsePython.org; not yet in setup.py install_requires. Ran the sbom twice on this host: second run skips the build.
+  2026-10-13 addendum: Stage 2 (files over Kafka) was added to AI-WorkPlan.org; since built and tested, see the
+  2026-10-14 notes above.
   2026-10-10 addendum:
   - HTTPS and a login for Kafbat UI are not in this repo's scope yet: certificates are designed
     across packages (bisos.crypt README.org, "BISOS Certificates --- Umbrella Design"; plan in
@@ -40,8 +53,13 @@ Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
   - Companion change in bisos.banna (committed 115db49, installed editable in bisos3).
   - /etc/hosts on this host already has =127.0.22.113  kafka.here= (via
     kafka-here-dns.pcs -i dnsCap_update; backup /etc/hosts.20261009224000).
-  - NOT yet done on any host: kafka-sbom.pcs -i sbom_fullUpdate / kafka-cbs.pcs -i cbs_materialize.
-  - TODO <<1.1>> is left as TODO, pending a real materialization (then /bx-done 1.1).
+  - 2026-10-14: materialized by hand on this host (sbom_fullUpdate, then cbs_materialize); both
+    units active, broker 24007/24008, Kafbat UI 24009 (API shows cluster ONLINE, 1 broker, KRAFT),
+    http://kafka.here 200, console produce/consume OK, driftCheck all agree. See WorkPlan 2.3.
+    Found: Kafbat UI 1.5.0 needs Java 25 (class file 69); Java 21 crash-looped with
+    UnsupportedClassVersionError. jrePkg is now openjdk-25-jre-headless (Kafka runs on it too).
+    Still to repeat on a different platform (user will).
+  - TODO <<1.1>> is DONE (2026-10-14, after a real by-hand materialization).
 
 * Architecture
   - =py3/bisos/kafka/kafkaInfo.py= --- the single source of facts. Everything else
@@ -57,7 +75,7 @@ Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
   - =py3/bin/=:
     - kafka-cbs.pcs (CBS: sbom + units [kafka, kafbat-ui] + kafka-assemble.cs)
     - cbmProc-kafka.spcs (CBM pointer; leaf sys/cbm/collective/hereWeb/kafka/)
-    - kafka-sbom.pcs: apt openjdk-21-jre-headless + curl, then func-bearing pseudo-pkgs
+    - kafka-sbom.pcs: apt openjdk-25-jre-headless + curl, then func-bearing pseudo-pkgs
       kafkaAcctSetup, kafkaDistSetup, kafkaConfSetup (writes configs only when absent;
       formats storage only when meta.properties absent), kafbatUiSetup. All idempotent.
     - kafka-sysd.pcs, kafbat-ui-sysd.pcs (both User=kafka, EnvironmentFile=...)
@@ -83,7 +101,6 @@ Last updated: 2026-10-09 (end of Stage 1 / TODO <<1.1>> session).
   - The actual install and run: sbom_fullUpdate (download, checksum, unpack, account,
     kafka-storage.sh format --standalone), unit start, Kafbat UI connecting to the
     broker, nginx vhost (webVirtDom), cbm_materialize at the planted leaf.
-  - Kafbat UI on Java 21: docs found say 17+; newer JDKs reported working; not run here.
   - nginx proxy_buffering off for Kafbat's SSE message streaming --- reasoned, not observed.
   - tests/verify.sh end to end (it needs lpDo and bisos.kafka installed).
 

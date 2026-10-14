@@ -38,6 +38,15 @@ match.
 
 * Table of Contents     :TOC:
 - [[#overview][Overview]]
+- [[#the-bisos-kafka-model][The BISOS Kafka Model]]
+- [[#summary-of-kafka-and-terminology][Summary of Kafka and Terminology]]
+  - [[#the-mental-model-a-durable-log-not-a-queue][The Mental Model: a Durable Log, Not a Queue]]
+  - [[#the-terms-precisely][The Terms, Precisely]]
+  - [[#source-and-sink-where-the-words-come-from][Source and Sink: Where the Words Come From]]
+  - [[#security-authentication-authorization-encryption][Security: Authentication, Authorization, Encryption]]
+  - [[#delivery-guarantees-and-transactions][Delivery Guarantees and Transactions]]
+  - [[#common-terminology-mistakes][Common Terminology Mistakes]]
+  - [[#what-you-see-on-this-host][What You See on This Host]]
 - [[#what-gets-installed-and-where][What Gets Installed, and Where]]
 - [[#the-2-systemd-units][The 2 systemd Units]]
 - [[#listeners-and-ports][Listeners and Ports]]
@@ -53,24 +62,341 @@ match.
 - [[#documentation-and-blee-panels][Documentation and Blee-Panels]]
 - [[#support][Support]]
 - [[#planned-improvements][Planned Improvements]]
+  - [[#authentication-for-kafbat-ui-so-it-can-listen-beyond-loopback][Authentication for Kafbat UI, so it can listen beyond loopback]]
+  - [[#remote-clients-a-non-loopback-broker-listener-with-sasltls][Remote clients: a non-loopback broker listener, with SASL/TLS]]
+  - [[#live-status-cmnds-in-kafkaadmincs-broker-reachable-quorum-leader-rather-than-printed-examples][Live status Cmnds in kafkaAdmin.cs (broker reachable, quorum leader) rather than printed examples]]
+  - [[#a-capability-materialization-figure-kafka-graphvizpcs-as-bisosairflow-has][A Capability Materialization figure (kafka-graphviz.pcs), as bisos.airflow has]]
+
+* The BISOS Kafka Model
+
+=bisos.kafka= (=/bisos/git/bxRepos/bisos-pip/kafka=) packages Apache Kafka
+4.3.1 (single node, KRaft combined broker and controller) plus the Kafbat
+UI as a hereWeb CBS/CBM, deployed the BISOS way rather than via a Docker
+Compose quick-start. *As of 2026-10-14 it is materialized on one host
+(bisos3 dev host, by hand)*: broker on 24007, Kafbat UI at http://kafka.here; see =AI-WorkPlan.org= 2.3.
+Transactions on a single broker need =transaction.state.log.replication.factor=1=
+and =transaction.state.log.min.isr=1=.
+
+Which Python client library to use is in [[file:KafkaUsePython.org][KafkaUsePython.org]].
+
+=bisos.kafka= is also to carry the generic =kafkaFileSend.cs= /
+=kafkaFileReceive.cs= (module =bisos/kafka/kafkaFileTransfer.py=, Cmnds in
+=kafkaFileTransfer_csu.py=), installed
+with pipx; a consumer's code runs them as subprocesses and never imports
+=bisos.*= (=AI-WorkPlan.org= Stage 2).
+
+
+* Summary of Kafka and Terminology
+
+This section is for someone new to Kafka. It gives the mental model first,
+then the exact vocabulary, then the mistakes people most often make with it.
+Wording follows the Apache Kafka documentation (https://kafka.apache.org/documentation/).
+
+** The Mental Model: a Durable Log, Not a Queue
+
+Kafka is a *distributed, durable, append-only log service*. Programs append
+/records/ to named logs, and other programs read those logs, each at its own
+pace and from a position it keeps for itself.
+
+Three properties make Kafka different from a message queue:
+
+1) *Reading does not remove anything.* A record stays until its topic's
+   retention expires (here: 7 days, =log.retention.hours=168=) or the topic is
+   compacted. Any number of independent readers can read the same record, and a
+   reader can go back and read it again.
+2) *The reader keeps the bookmark, not the broker's queue.* Each reader's
+   position (its /offset/) is recorded per consumer group. Moving the bookmark
+   back replays history; moving it forward skips records.
+3) *Order is per partition, not per topic.* A topic is split into partitions
+   for parallelism; only within one partition are records in a guaranteed order.
+
+#+begin_example
+ Producers                  Kafka cluster (here: 1 broker)               Consumers
+ ---------          +--------------------------------------+             ---------
+                    | Topic "orders"                       |
+  producer A -----> |  partition 0: [r0][r1][r2][r3] ->    | <--poll---  consumer group G1
+  producer B -----> |  partition 1: [r0][r1][r2]     ->    |             (member 1: p0,
+                    |                                      |              member 2: p1)
+                    | Topic "audit"                        |
+                    |  partition 0: [r0][r1]         ->    | <--poll---  consumer group G2
+                    +--------------------------------------+             (reads the same topics,
+                                                                          independently of G1)
+  Clients talk to brokers over TCP in Kafka's own binary protocol, not HTTP.
+  Each box row ends in "->": new records are appended at the end of a partition.
+#+end_example
+
+** The Terms, Precisely
+
+| Term                | Exact meaning                                                                   |
+|---------------------+---------------------------------------------------------------------------------|
+| Record              | The unit of data. Has a /key/ (optional), a /value/ (bytes), /headers/ (optional      |
+|                     | key-value pairs) and a timestamp. Also called an /event/; "message" is common and |
+|                     | acceptable, but the Kafka docs say record.                                      |
+|---------------------+---------------------------------------------------------------------------------|
+| Topic               | A named log of records, e.g. =orders=. Logical: the data is physically stored as  |
+|                     | partitions. A topic is not a queue, a table or a file.                          |
+|---------------------+---------------------------------------------------------------------------------|
+| Partition           | One ordered, append-only sequence of records within a topic. The unit of        |
+|                     | ordering, of parallelism and of replication. A topic has one or more.           |
+|---------------------+---------------------------------------------------------------------------------|
+| Offset              | A record's sequence number /within one partition/. Offsets are per partition, not |
+|                     | per topic and not global. It is not a timestamp.                                |
+|---------------------+---------------------------------------------------------------------------------|
+| Key                 | Optional bytes that choose the partition (the same key always goes to the same  |
+|                     | partition, while the partition count is unchanged). Same key means same order.  |
+|---------------------+---------------------------------------------------------------------------------|
+| Broker              | A Kafka server process. It stores partitions on its disk and serves producers   |
+|                     | and consumers. Also called a /Kafka server/; "node" is ambiguous (see /node/        |
+|                     | below).                                                                         |
+|---------------------+---------------------------------------------------------------------------------|
+| Cluster             | A set of brokers working together. This host runs a cluster of one broker.      |
+|---------------------+---------------------------------------------------------------------------------|
+| Controller          | The part of the cluster that manages metadata: which topics exist, which broker |
+|                     | leads each partition. In KRaft mode controllers use Raft consensus to agree on  |
+|                     | it.                                                                             |
+|---------------------+---------------------------------------------------------------------------------|
+| KRaft               | Kafka's built-in metadata consensus (Kafka Raft). It replaced ZooKeeper, which  |
+|                     | was removed in Kafka 4.0. There is no ZooKeeper on this host.                   |
+|---------------------+---------------------------------------------------------------------------------|
+| Node                | One Kafka process, identified by =node.id=. With =process.roles=broker,controller=  |
+|                     | (combined mode, as here) one node is both a broker and a controller. In         |
+|                     | production the roles are usually separated.                                     |
+|---------------------+---------------------------------------------------------------------------------|
+| Replication         | Each partition is copied to several brokers: one /leader/ (takes all reads and    |
+|                     | writes) and /followers/. =replication.factor= is the number of copies.              |
+|---------------------+---------------------------------------------------------------------------------|
+| ISR                 | In-Sync Replicas: the replicas that are caught up with the leader.              |
+|                     | =min.insync.replicas= is how many must have a write before it is acknowledged.    |
+|---------------------+---------------------------------------------------------------------------------|
+| Producer            | A client application that appends records to topics. "Producer" describes a     |
+|                     | role, not a product.                                                            |
+|---------------------+---------------------------------------------------------------------------------|
+| Consumer            | A client application that reads records from topics, in a /consumer group/.       |
+|---------------------+---------------------------------------------------------------------------------|
+| Consumer group      | Consumers sharing one =group.id=. Kafka divides a topic's partitions among the    |
+|                     | group's members, each partition going to exactly one member at a time. A        |
+|                     | different group reads the same topic independently, from its own offsets.       |
+|---------------------+---------------------------------------------------------------------------------|
+| Committed offset    | The consumer group's bookmark for a partition, stored in the internal topic     |
+|                     | =__consumer_offsets=. /Committing/ moves the bookmark. It does not delete or        |
+|                     | acknowledge the record.                                                         |
+|---------------------+---------------------------------------------------------------------------------|
+| Client              | Anything that connects to a broker: producers, consumers and admin tools        |
+|                     | (=kafka-topics.sh=, Kafbat UI) are all clients.                                   |
+|---------------------+---------------------------------------------------------------------------------|
+| Listener            | A network endpoint of a broker: an address and port plus a security protocol,   |
+|                     | e.g. =PLAINTEXT://127.0.0.1:24007=.                                               |
+|---------------------+---------------------------------------------------------------------------------|
+| Bootstrap servers   | The addresses a client uses for its first contact, to learn the cluster's       |
+|                     | layout. After that the client connects to whichever brokers the metadata names. |
+|---------------------+---------------------------------------------------------------------------------|
+| Advertised listener | The address the broker /tells clients/ to use. It must be reachable by the        |
+|                     | client, not just by the broker itself.                                          |
+|---------------------+---------------------------------------------------------------------------------|
+| Retention           | How long a topic keeps records (time or size) regardless of whether they were   |
+|                     | read. /Compaction/ instead keeps the latest record per key.                       |
+
+** Source and Sink: Where the Words Come From
+
+/Source/ and /sink/ are *not* part of Kafka's core vocabulary. The core words
+are producer and consumer. Source and sink come from /Kafka Connect/, a
+separate framework shipped with Kafka for moving data between Kafka and other
+systems without writing code:
+
+| Term             | Meaning                                                                            |
+|------------------+------------------------------------------------------------------------------------|
+| Source connector | A Connect plugin that reads from an /external/ system (a database, a file) and       |
+|                  | writes records /into/ Kafka. Internally it acts as a producer.                       |
+|------------------+------------------------------------------------------------------------------------|
+| Sink connector   | A Connect plugin that reads records /from/ Kafka and writes them to an external      |
+|                  | system (a database, S3, a file). Internally it acts as a consumer.                 |
+|------------------+------------------------------------------------------------------------------------|
+| Kafka Streams    | A Java library for processing records from topics into topics. A different thing   |
+|                  | again.                                                                             |
+
+In general data-flow language a "source" is where data enters a pipeline and a
+"sink" is where it leaves, so people also call any program that feeds Kafka a
+source. That is a loose usage. Precisely: *a source is something that produces
+into Kafka, a producer is the client role that does it; a sink takes data out
+of Kafka, a consumer is the client role that does it.*
+
+*In this repo*: the planned =kafkaFileSend.cs= (a producer: posts a file) and
+=kafkaFileReceive.cs= (a consumer: rebuilds it) (=AI-WorkPlan.org= Stage 2) are
+named Send and Receive, not Source and Sink, because those two words mean Kafka
+Connect connectors and, in many data pipelines, the origin of the data. They are ordinary
+Kafka clients, /not/ Kafka Connect connectors.
+
+** Security: Authentication, Authorization, Encryption
+
+These are three separate questions, and Kafka answers each with different
+settings:
+
+| Question                     | Name           | Kafka mechanism                                       |
+|------------------------------+----------------+-------------------------------------------------------|
+| Who is this client?          | Authentication | SASL (mechanisms =PLAIN=, =SCRAM-SHA-256/512=, =GSSAPI= for |
+|                              |                | Kerberos, =OAUTHBEARER=) or TLS client certificates     |
+|                              |                | (mutual TLS)                                          |
+|------------------------------+----------------+-------------------------------------------------------|
+| What may this client do?     | Authorization  | ACLs (or a pluggable authorizer) on topics, groups    |
+|                              |                | and the cluster. It needs authentication first, since |
+|                              |                | ACLs name an identity.                                |
+|------------------------------+----------------+-------------------------------------------------------|
+| Can others read the traffic? | Encryption     | TLS on the listener. Kafka's configuration calls it   |
+|                              |                | =SSL=, but it means TLS.                                |
+
+The authentication and encryption choices combine in the listener's security protocol:
+
+| Security protocol | Encrypted | Authenticated                                                         |
+|-------------------+-----------+-----------------------------------------------------------------------|
+| =PLAINTEXT=         | no        | no                                                                    |
+|-------------------+-----------+-----------------------------------------------------------------------|
+| =SSL=               | yes (TLS) | no, or yes with client certificates                                   |
+|-------------------+-----------+-----------------------------------------------------------------------|
+| =SASL_PLAINTEXT=    | no        | yes (SASL): credentials cross the network in the clear for some       |
+|                   |           | mechanisms                                                            |
+|-------------------+-----------+-----------------------------------------------------------------------|
+| =SASL_SSL=          | yes (TLS) | yes (SASL): the usual production choice                               |
+
+*Here*: every listener is =PLAINTEXT= and bound to =127.0.0.1=. There is no
+authentication, no authorization and no encryption. That is safe only because
+nothing outside this host can connect. Kafbat UI likewise has no login and is
+loopback-only behind nginx. See "Planned Improvements" for authentication and
+remote-client TODOs.
+
+** Delivery Guarantees and Transactions
+
+| Guarantee     | Meaning                                                                               |
+|---------------+---------------------------------------------------------------------------------------|
+| At most once  | A record is delivered zero or one times. It may be lost, never repeated.              |
+|---------------+---------------------------------------------------------------------------------------|
+| At least once | Delivered one or more times. Never lost, possibly repeated. This is the default for a |
+|               | careful producer and consumer.                                                        |
+|---------------+---------------------------------------------------------------------------------------|
+| Exactly once  | The effect appears once. In Kafka it holds for /read-process-write inside Kafka/, using |
+|               | an idempotent producer plus transactions.                                             |
+
+A /transaction/ lets a producer write to several partitions or topics
+atomically: a consumer with =isolation.level=read_committed= sees all of it or
+none of it. A consumer in the default =read_uncommitted= sees records that a
+transaction has not yet committed, or later aborted. Transactions rely on an
+internal topic =__transaction_state=; on this one-broker install its replication
+factor is 1 (see =py3/bisos/kafka/kafkaInfo.py=), otherwise the first
+transactional send would fail.
+
+** Common Terminology Mistakes
+
+1) *"Kafka is a message queue."* In a queue, reading removes the message.
+   In Kafka reading removes nothing; records expire by retention. Two consumer
+   groups each get every record. Use /log/ for the model.
+2) *Treating kafka.here as Kafka.* =http://kafka.here= is Kafbat UI, a
+   separate open-source web application that is itself a Kafka /client/. Kafka
+   proper is the broker on =127.0.0.1:24007=, and it does not speak HTTP.
+   Pointing a browser or =curl= at the broker port gets garbage.
+3) *Expecting order across a topic.* Order holds only within a partition. If
+   order matters for a set of records, give them the same key.
+4) *Thinking a consumer "acknowledges and deletes".* A consumer /commits an
+   offset/, which is only a bookmark. Records are removed by retention.
+5) *Calling the cluster the broker, or the other way round.* A broker is one
+   server process. A cluster is a set of them. Here they happen to be one.
+6) *Confusing source/sink with producer/consumer.* See the previous section:
+   source and sink are Kafka Connect and data-flow terms; producer and consumer
+   are the Kafka client roles.
+7) *Publisher / subscriber.* These are general pub-sub words. A Kafka consumer
+   does not "subscribe" the way a queue subscriber does: it /polls/ and keeps
+   its own position. Say producer and consumer.
+8) *Calling any Kafka process "the server" or "a node" without saying which.*
+   Say broker, controller or node (with its role).
+9) *"Exactly once" as a blanket promise.* It covers work inside Kafka. A sink
+   that writes to an external system (a database, a file) is still at least
+   once unless that write is itself idempotent. Make the write repeatable
+   (rewrite the same file, upsert by key).
+10) *Mixing up encryption and authentication.* TLS (=SSL= in the config) hides
+    traffic; it does not say who the client is. SASL says who, and over
+    =SASL_PLAINTEXT= it does not hide it. Authorization (ACLs) is a third step.
+11) *Saying "SSL".* The protocol is TLS. Kafka's setting names kept the old word.
+12) *Changing the partition count casually.* A topic's partitions can be
+    increased, never decreased, and increasing remaps keys to different
+    partitions, breaking "same key, same partition" for existing data.
+13) *Taking replication factor 1 for safety.* One copy on one broker means a
+    lost disk loses the data. Replication factor and =min.insync.replicas=
+    are the safety; this single node deliberately has neither.
+14) *A wrong advertised listener.* A client connects to the bootstrap address,
+    receives the advertised addresses, then fails on those. The usual cause of
+    "it connects, then times out". The bootstrap server is not a special
+    server; it is just the first address tried.
+15) *Believing ZooKeeper is needed.* Not since Kafka 4.0. Metadata is in KRaft.
+16) *Assuming large payloads are fine.* The default maximum record size is
+    about 1 MB. Large files are sent as many line-sized records (the Stage 2
+    design), or as a reference to the file.
+17) *Calling an offset a time.* An offset is a per-partition sequence number.
+    Timestamps are separate, and Kafka can look up an offset by timestamp.
+
+** What You See on This Host
+
+| Thing                | What it is                             | Where                                 |
+|----------------------+----------------------------------------+---------------------------------------|
+| Broker + controller  | One Kafka process, combined mode       | =127.0.0.1:24007= (clients), =24008=      |
+|                      | (=kafka.service=)                        | (controller)                          |
+|----------------------+----------------------------------------+---------------------------------------|
+| Kafbat UI            | A web client of the broker             | =127.0.0.1:24009=, via nginx as         |
+|                      | (=kafbat-ui.service=)                    | =http://kafka.here=                     |
+|----------------------+----------------------------------------+---------------------------------------|
+| Topics and records   | Files under the broker's data          | =/var/lib/kafka/data=                   |
+|                      | directory                              |                                       |
+|----------------------+----------------------------------------+---------------------------------------|
+| Internal topics      | =__consumer_offsets=,                    | same                                  |
+|                      | =__transaction_state=, created on first  |                                       |
+|                      | use                                    |                                       |
+|----------------------+----------------------------------------+---------------------------------------|
+| Command-line clients | Producer, consumer, topics and admin   | =/opt/kafka/current/bin=; see           |
+|                      | scripts                                | =quickKafka.cs=                         |
+|----------------------+----------------------------------------+---------------------------------------|
+| Cluster              | 1 broker, replication factor 1, no     | PLAINTEXT, loopback only              |
+|                      | authentication                         |                                       |
+
+In Kafbat UI: /Topics/ lists topics and shows each one's partitions, offsets and
+messages; /Consumers/ lists consumer groups and how far behind each one is;
+/Brokers/ shows the broker. Everything there is read from, or sent to, the
+broker as an ordinary client would.
+
+A first exercise from a shell (see =quickKafka.cs= for the cheat sheet):
+
+#+begin_src bash
+quickKafka.cs
+K=/opt/kafka/current/bin ; BS=127.0.0.1:24007
+$K/kafka-topics.sh --bootstrap-server $BS --create --topic try --partitions 1
+printf 'a\nb\nc\n' | $K/kafka-console-producer.sh --bootstrap-server $BS --topic try
+$K/kafka-console-consumer.sh --bootstrap-server $BS --topic try --from-beginning \
+    --max-messages 3 --group g1
+#+end_src
+
+Then read the topic again with =--group g2= and see the same three records again; that is the difference between a log and a queue.
 
 * What Gets Installed, and Where
 
 Every fact below lives in one place, =py3/bisos/kafka/kafkaInfo.py=, which the
 sbom, the units, the dns and vhost files and the admin CS all read.
 
-| What                        | Where                                     | Owner          |
-|-----------------------------+-------------------------------------------+----------------|
-| JRE (=openjdk-21-jre-headless=) | apt                                   | root           |
-| The =kafka= account and group | uid/gid 503, from bisos.banna =sysAccts= | ---         |
-| Kafka 4.3.1 (Scala 2.13)    | =/opt/kafka/kafka_2.13-4.3.1=             | root           |
-| Active Kafka version        | =/opt/kafka/current= -> the above         | root           |
-| Kafbat UI 1.5.0             | =/opt/kafka/kafbat/api-v1.5.0.jar=        | root           |
-| Broker config               | =/etc/kafka/server.properties=            | root:kafka 640 |
-| Broker environment          | =/etc/default/kafka=                      | root:kafka 640 |
-| Kafbat UI environment       | =/etc/default/kafbat-ui=                  | root:kafka 640 |
-| KRaft metadata + partitions | =/var/lib/kafka/data=                     | kafka          |
-| Application logs            | =/var/log/kafka=                          | kafka          |
+| What                          | Where                                  | Owner          |
+|-------------------------------+----------------------------------------+----------------|
+| JRE (=openjdk-25-jre-headless=) | apt                                    | root           |
+| The =kafka= account and group   | uid/gid 503, from bisos.banna =sysAccts= | ---            |
+| Kafka 4.3.1 (Scala 2.13)      | =/opt/kafka/kafka_2.13-4.3.1=            | root           |
+| Active Kafka version          | =/opt/kafka/current= -> the above        | root           |
+| Kafbat UI 1.5.0               | =/opt/kafka/kafbat/api-v1.5.0.jar=       | root           |
+| librdkafka 2.16.0 (Kerberos)   | =/opt/kafka/librdkafka-2.16.0=             | root           |
+| Active librdkafka              | =/opt/kafka/librdkafka= -> the above       | root           |
+| Build env (Python binding)     | =/opt/kafka/librdkafka/build-env.sh=       | root           |
+| Broker config                 | =/etc/kafka/server.properties=           | root:kafka 640 |
+| Broker environment            | =/etc/default/kafka=                     | root:kafka 640 |
+| Kafbat UI environment         | =/etc/default/kafbat-ui=                 | root:kafka 640 |
+| KRaft metadata + partitions   | =/var/lib/kafka/data=                    | kafka          |
+| Application logs              | =/var/log/kafka=                         | kafka          |
+
+librdkafka is the C client library under the =confluent-kafka= Python package. It is built
+from a pinned, checksummed source tarball with Kerberos (GSSAPI), which the PyPI wheels lack;
+a client that must reach a Kerberos cluster builds its binding against it. See
+[[file:KafkaUsePython.org][KafkaUsePython.org]].
 
 The account's numbers come from banna's registry, not from =useradd='s per-host choice,
 so =kafka= is 503 on every platform; the sbom refuses if 503 is already taken.
@@ -85,13 +411,17 @@ directory again would mint a new cluster id and orphan every topic.
 
 * The 2 systemd Units
 
-| Unit                 | Runs                                         | Ordering                                  |
-|----------------------+----------------------------------------------+-------------------------------------------|
-| =kafka-sysd.pcs=     | =kafka-server-start.sh /etc/kafka/server.properties= --- broker and KRaft controller in one process | =After=network.target=                    |
-| =kafbat-ui-sysd.pcs= | =java -jar api-v1.5.0.jar=, configured by =/etc/default/kafbat-ui= | =After=/=Wants=kafka.service=              |
+| Unit                 | Runs                                          | Ordering                       |
+|----------------------+-----------------------------------------------+--------------------------------|
+| =kafka-sysd.pcs=       | =kafka-server-start.sh= with                    | =After=network.target=           |
+|                      | =/etc/kafka/server.properties=; broker and      |                                |
+|                      | KRaft controller in one process               |                                |
+|----------------------+-----------------------------------------------+--------------------------------|
+| =kafbat-ui-sysd.pcs=   | =java -jar api-v1.5.0.jar=, configured by       | =After=kafka.service=            |
+|                      | =/etc/default/kafbat-ui=                        | =Wants=kafka.service=            |
 
-Both run as =User=kafka=. Kafbat UI uses =Wants== rather than =Requires==, so
-it stays up, showing the cluster as offline, while =kafka.service= restarts.
+Both run as =User=kafka=. Kafbat UI uses =Wants= rather than =Requires=, so it
+stays up, showing the cluster as offline, while =kafka.service= restarts.
 
 * Listeners and Ports
 
@@ -99,12 +429,12 @@ Ports are assigned in =bisos.banna= (=tcpPorts.py=), never hardcoded. Every
 listener binds loopback only: the broker serves this host's tenants, and
 Kafbat UI has no authentication.
 
-| Listener               | Address           | banna name        |
-|------------------------+-------------------+-------------------|
-| Broker (PLAINTEXT)     | =127.0.0.1:24007= | =kafka=           |
-| KRaft controller       | =127.0.0.1:24008= | =kafkaController= |
-| Kafbat UI              | =127.0.0.1:24009= | =kafbatUi=        |
-| Kafbat UI, via nginx   | =http://kafka.here= | ---             |
+| Listener             | Address           | banna name      |
+|----------------------+-------------------+-----------------|
+| Broker (PLAINTEXT)   | =127.0.0.1:24007=   | =kafka=           |
+| KRaft controller     | =127.0.0.1:24008=   | =kafkaController= |
+| Kafbat UI            | =127.0.0.1:24009=   | =kafbatUi=        |
+| Kafbat UI, via nginx | =http://kafka.here= | ---             |
 
 Clients use =bootstrap.servers=127.0.0.1:24007=.
 
@@ -179,8 +509,55 @@ reading Kafbat UI, run:
 quickKafka.cs
 #+end_src
 
+** Files Over Kafka: =kafkaFileSend.cs= and =kafkaFileReceive.cs=
+
+Two commands, generic and optional, that carry files through Kafka and, if wished, rebuild them. They
+are ordinary Kafka clients (a producer and a consumer), not Kafka Connect connectors, and they know nothing
+about any particular consumer: topic, key, headers, identity headers and output paths are all parameters.
+Needs the Python package =confluent-kafka= (for Kerberos, built against the library =kafka-sbom.pcs=
+provides; see [[file:KafkaUsePython.org][KafkaUsePython.org]]).
+
+*Send.* Each file becomes one Kafka transaction; each line one record. The value is the line without its
+terminator, and every record carries the headers you give. A consumer that knows nothing about files reads
+plain, headed rows.
+
+#+begin_src bash
+kafkaFileSend.cs -i fileSend --bootstrap=127.0.0.1:24007 --topic=results \
+    --headers=run=r1,host=h1 --attrs=kind=audit --root=/data/out /data/out/a/b/data.txt
+#+end_src
+
+In the default =--model files= the first record also carries a =kfx-bof= header and the last a =kfx-eof=
+header (JSON): the path (relative to =--root=, so a hierarchy can be reproduced), size, line count,
+SHA-256, the line terminator, and which headers identify the file. The BOF is what the sender
+/declared/; the EOF is what it /observed/ while streaming, and if they differ the file changed during
+the send and the sender aborts its own transaction. With =--model records= there are no markers.
+
+*Receive.* Reads as a =read_committed= consumer, buffers each file until its last record, checks lines,
+bytes and SHA-256 against both markers, and writes it atomically under =--outBase=, reproducing the sent
+path (or placing it with =--pathTemplate=). The same path with the same content is skipped.
+
+#+begin_src bash
+kafkaFileReceive.cs -i fileReceive --bootstrap=127.0.0.1:24007 --topic=results --group=g1 \
+    --outBase=/data/in --idleExit=30
+#+end_src
+
+A rejected file (a failed check, a path that is not relative, a malformed marker) is reported and
+skipped; it does not stop the stream. Both commands exit non-zero if anything failed. Security settings
+(=sasl.*=, =ssl.*=) come from =--clientConf=, a file of librdkafka =name=value= lines.
+
+*Known limits, by decision:* lines only (no chunking of binary files); one uniform line terminator per file;
+non-empty files; a file is held in memory by sender and receiver; senders are assumed benevolent (paths are
+checked against mistakes, not attacks); a sender killed mid-transaction holds back =read_committed= readers
+of that partition until =transaction.timeout.ms= (60 s by default). Design and reasons: =AI-WorkPlan.org=,
+Stage 2. Tests: =tests/test_kafkaFileTransfer.py= (no broker) and =tests/integration_kafkaFileTransfer.py=
+(this host's broker).
+
 * Key Files
 
+- =py3/bisos/kafka/kafkaFileTransfer.py= --- the pure module: records from a file, the receiver's assembler, path checks, atomic placement, and the thin =confluent-kafka= layer.
+- =py3/bisos/kafka/kafkaFileTransfer_csu.py= --- the two Cmnds, =fileSend= and =fileReceive=, and their examples.
+- =py3/bin/kafkaFileSend.cs=, =py3/bin/kafkaFileReceive.cs= --- the two thin commands over that unit.
+- =tests/= --- unit and integration tests of the file transfer, and =tests/clientCompare/= (client comparison and the Kerberos handshake test).
 - =py3/bisos/kafka/kafkaInfo.py= --- the single source of facts: pinned versions and checksums, paths, ports, and the generators of the three config files and the units' identity lines.
 - =py3/bin/kafka-cbs.pcs= --- CBS declaring the bundle (sbom + 2 sysd units + assemble).
 - =py3/bin/cbmProc-kafka.spcs= --- planted CBM pointer leaf that materializes the CBS.

@@ -17,7 +17,7 @@ from bisos.b import b_io
 from bisos.sbom import pkgsSeed  # pkgsSeed.plantWithWhich("seedSbom.cs")
 from bisos.banna import sysAccts
 from bisos.kafka.kafkaInfo import (
-    kafkaInfo, serverPropertiesContent, envFileContent, kafbatEnvFileContent,
+    kafkaInfo, serverPropertiesContent, envFileContent, kafbatEnvFileContent, librdkafkaBuildEnvContent,
 )
 
 ap = pkgsSeed.aptPkg
@@ -142,17 +142,53 @@ sudo chmod 640 {kafkaInfo.kafbatEnvFile}
 """)
 
 
+def librdkafkaSetup():
+    """The pinned librdkafka, built from source with Kerberos (GSSAPI). Not an apt package.
+
+    The PyPI wheels of confluent-kafka omit GSSAPI, so a consumer that must talk to a
+    Kerberos cluster builds the binding against this library (build-env.sh). Built once per
+    version into installBase/librdkafka-<version>, root-owned; installBase/librdkafka points
+    at it. A tarball whose SHA-256 does not match kafkaInfo.librdkafkaSha256 is discarded.
+    The build is refused unless the result links libsasl2: a library without it would
+    install cleanly and fail only when a GSSAPI client first connects.
+    """
+    return _bash(f"""
+set -e
+if [ ! -f {kafkaInfo.librdkafkaDir}/lib/librdkafka.so.1 ] ; then
+    tmpDir=$(mktemp -d)
+    trap 'rm -rf "$tmpDir"' EXIT
+    curl -fsSL -o "$tmpDir/librdkafka.tgz" {kafkaInfo.librdkafkaUrl}
+    echo "{kafkaInfo.librdkafkaSha256}  $tmpDir/librdkafka.tgz" | sha256sum -c --quiet -
+    tar -xzf "$tmpDir/librdkafka.tgz" -C "$tmpDir"
+    ( cd "$tmpDir/librdkafka-{kafkaInfo.librdkafkaVersion}" \\
+        && ./configure --prefix={kafkaInfo.librdkafkaDir} --enable-gssapi >/dev/null \\
+        && make -j"$(nproc)" >/dev/null \\
+        && sudo make install >/dev/null )
+fi
+grep -q libsasl2 {kafkaInfo.librdkafkaDir}/lib/pkgconfig/rdkafka.pc \\
+    || {{ echo "librdkafka was built without libsasl2: no Kerberos" >&2; exit 1; }}
+
+sudo ln -sfn {kafkaInfo.librdkafkaDir} {kafkaInfo.librdkafkaHome}
+sudo tee {kafkaInfo.librdkafkaBuildEnvFile} >/dev/null <<'RDK_ENV_EOF'
+{librdkafkaBuildEnvContent()}RDK_ENV_EOF
+""")
+
+
 aptPkgsList = [
-    ap(kafkaInfo.jrePkg),           # Kafka 4.x needs Java 17+; Kafbat UI runs on 21 too
+    ap(kafkaInfo.jrePkg),           # Kafka 4.x needs 17+; Kafbat UI 1.5.0 is built for Java 25 (class file 69)
     ap("curl"),                     # Fetches the upstream tarball and jar
     ap("kafkaAcctSetup", func=kafkaAcctSetup),
     ap("kafkaDistSetup", func=kafkaDistSetup),    # after curl and the account dirs
     ap("kafkaConfSetup", func=kafkaConfSetup),    # after the dist: format needs kafka-storage.sh
     ap("kafbatUiSetup", func=kafbatUiSetup),
+    *[ap(pkg) for pkg in kafkaInfo.clientBuildPkgs],       # to build librdkafka and the binding
+    *[ap(pkg) for pkg in kafkaInfo.clientKerberosPkgs],    # Kerberos at run time: kinit, GSSAPI plugin
+    ap("librdkafkaSetup", func=librdkafkaSetup),           # after the build deps
 ]
 
 # No pip packages: Python clients (confluent-kafka, kafka-python, ...) install into each
-# consumer's own virtenv, through that consumer's sbom.
+# consumer's own virtenv, through that consumer's sbom. librdkafkaSetup only supplies the
+# Kerberos-capable C library they can build against (build-env.sh); see KafkaUsePython.org.
 
 pkgsSeed.setup(
     aptPkgsList=aptPkgsList,
@@ -196,6 +232,14 @@ class readme(cs.Cmnd):
      {kafkaInfo.metaProps} is absent).
   5) kafbatUiSetup: {kafkaInfo.kafbatUrl}
      verified by SHA-256, as {kafkaInfo.kafbatJar}, and {kafkaInfo.kafbatEnvFile}.
+  6) apt packages to build with and to use Kerberos: {", ".join(kafkaInfo.clientBuildPkgs)};
+     {", ".join(kafkaInfo.clientKerberosPkgs)}.
+  7) librdkafkaSetup: librdkafka {kafkaInfo.librdkafkaVersion} from {kafkaInfo.librdkafkaUrl}
+     verified by SHA-256, built with Kerberos (GSSAPI) into {kafkaInfo.librdkafkaDir},
+     with {kafkaInfo.librdkafkaHome} pointing at it. For clients: the PyPI wheels of
+     confluent-kafka have no Kerberos, so build the binding against it:
+         . {kafkaInfo.librdkafkaHome}/build-env.sh
+         pip install --no-binary confluent-kafka confluent-kafka=={kafkaInfo.confluentKafkaVersion}
 
 ** Listeners (all loopback; ports from bisos.banna):
      broker      PLAINTEXT://{kafkaInfo.bootstrapServers}
@@ -205,7 +249,7 @@ class readme(cs.Cmnd):
 ** What this does NOT do:
   - It does not start anything. The kafka and kafbat-ui units are declared by
     kafka-cbs.pcs, which also runs this sbom.
-  - It installs no client libraries; those belong to each consumer's sbom.
+  - It installs no Python client libraries; those belong to each consumer's sbom.
   - Kafbat UI has no authentication. It listens on loopback only.
 
        kafka-sbom.pcs -i sbom_fullUpdate\

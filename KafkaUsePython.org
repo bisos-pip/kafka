@@ -1,0 +1,231 @@
+#+title: Using Kafka from Python --- Which Client Package for BISOS
+#+DATE: <2026-10-14 Wed>
+#+AUTHOR: Mohsen BANAN
+#+OPTIONS: toc:3
+
+* Purpose
+
+=bisos.kafka= installs and runs a Kafka broker (see [[file:README.org][README.org]]). This file is about the other
+side: the /Python client library/ used to talk to a broker, in particular by the planned
+=kafkaFileTransfer.py= (=AI-WorkPlan.org= Stage 2). It records which packages exist, what we measured,
+and which one BISOS uses (=confluent-kafka=, decided 2026-10-14). Facts are dated 2026-10-14.
+
+* Table of Contents     :TOC:
+- [[#purpose][Purpose]]
+- [[#what-the-file-transfer-needs-from-a-client][What the File Transfer Needs from a Client]]
+- [[#python-kafka-packages-considered][Python Kafka Packages Considered]]
+- [[#measured-on-our-broker][Measured on Our Broker]]
+- [[#recommendation][Recommendation]]
+- [[#open-points-and-risks][Open Points and Risks]]
+
+* What the File Transfer Needs from a Client
+
+| Need                                  | Why                                                           |
+|---------------------------------------+---------------------------------------------------------------|
+| Transactional producer                | One transaction per file: a =read_committed= reader sees all of |
+|                                       | a file or none of it.                                         |
+|---------------------------------------+---------------------------------------------------------------|
+| =read_committed= consumer               | The sink must not see records of aborted or unfinished        |
+|                                       | transactions.                                                 |
+|---------------------------------------+---------------------------------------------------------------|
+| Record headers                        | Identity of the file travels in headers whose names are       |
+|                                       | parameters (e.g. =run=, =host=).                                  |
+|---------------------------------------+---------------------------------------------------------------|
+| Throughput                            | Millions of rows every few minutes: about 10k records/s on    |
+|                                       | average, higher in bursts.                                    |
+|---------------------------------------+---------------------------------------------------------------|
+| Installs cleanly with pipx            | Tools are installed like =apt-get= into an isolated venv, on    |
+|                                       | hosts and in a container.                                     |
+|---------------------------------------+---------------------------------------------------------------|
+| Security modes of the target cluster  | The target cluster's mode decides. SASL_SSL with GSSAPI       |
+|                                       | (Kerberos) is common in enterprises; see the Kerberos         |
+|                                       | section.                                                      |
+|---------------------------------------+---------------------------------------------------------------|
+| Maintained, Apache-compatible licence | We depend on it for years.                                    |
+
+* Python Kafka Packages Considered
+
+PyPI data as queried on 2026-10-14.
+
+| Package          | Latest release    | What it is        | Assessment                                 |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =confluent-kafka=  | 2.16.0,           | Python binding of | Complete transactions and admin API; very  |
+|                  | 2026-10-07        | =librdkafka=, the C | fast. Pre-built Linux wheels do not        |
+|                  |                   | client. Wheels    | include Kerberos (GSSAPI) support (per its |
+|                  |                   | for Linux, macOS  | README); that needs a source build.        |
+|                  |                   | (x86_64, aarch64, | Maintained by Confluent.                   |
+|                  |                   | s390x), Python >= |                                            |
+|                  |                   | 3.8.              |                                            |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =kafka-python= 3.x | 3.0.11,           | Pure-Python       | A major release from 2.x: refactored       |
+|                  | 2026-08-16        | client (dpkp).    | networking, transactional producer         |
+|                  |                   | Python >= 3.8.    | improvements (KIP-360, 447, 654). Active   |
+|                  |                   |                   | (11 releases in 2 months) but young. No    |
+|                  |                   |                   | compiled code.                             |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =kafka-python=     | 2.0.2             | The same project, | Pinned by a lot of older code. Does not    |
+|                  | (2020-09-30)      |                   | import                                     |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| 2.0.x            |                   | old line.         | on Python 3.12 or newer (checked:          |
+|                  |                   |                   | =No module named 'kafka.vendor.six.moves'=). |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =kafka-python-ng=  | 2.2.3, 2024-10-02 | A community fork  | Made when the upstream was not releasing;  |
+|                  |                   | of kafka-python.  | upstream has since resumed, so little      |
+|                  |                   |                   | reason to use it.                          |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =aiokafka=         | 0.14.0,           | asyncio client,   | Fits an asyncio application. Our tools are |
+|                  | 2026-04-29        | Python >= 3.10,   | plain command-line programs; no benefit,   |
+|                  |                   | has compiled      | not tested.                                |
+|                  |                   | parts.            |                                            |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =pykafka=          | 2.8.0, 2018-09-24 | An older          | Dead. Not for new work.                    |
+|                  |                   | pure-Python       |                                            |
+|                  |                   | client.           |                                            |
+|------------------+-------------------+-------------------+--------------------------------------------|
+| =faust-streaming=  | 0.15.3,           | A                 | A different layer: not a client choice.    |
+|                  | 2026-08-23        | stream-processing |                                            |
+|                  |                   | framework (like   |                                            |
+|                  |                   | Kafka Streams)    |                                            |
+|                  |                   | built on a        |                                            |
+|                  |                   | client.           |                                            |
+
+Not Python, but related: =kcat= (a command-line tool on =librdkafka=) is already in the toolbox for
+quick looks. It sends lines and prints records; it has no file boundaries, atomicity or verification, which is
+why the file transfer is built.
+
+* Measured on Our Broker
+
+Against the =bisos.kafka= broker (Kafka 4.3.1, 1 node), Python 3.13.5, one producer and one consumer in
+a single process, loopback, 1 partition, 300,000 records of 120 bytes with a =seq= header, one transaction.
+Scripts: =tests/clientCompare/=. An aborted transaction of 1,000 records is sent first.
+
+| Result                                    | =kafka-python= 3.0.11            | =confluent-kafka= 2.16.0 |
+|-------------------------------------------+--------------------------------+------------------------|
+| Transaction commits                       | yes                            | yes                    |
+|-------------------------------------------+--------------------------------+------------------------|
+| Aborted records visible to read_committed | 0                              | 0                      |
+|-------------------------------------------+--------------------------------+------------------------|
+| Committed records read                    | 300,001 (300,000 + end marker) | 300,001                |
+|-------------------------------------------+--------------------------------+------------------------|
+| Produce and commit, records/s             | 17,700                         | 432,000                |
+|-------------------------------------------+--------------------------------+------------------------|
+| =read_committed= read, records/s            | 25,500                         | 55,000                 |
+
+This also settled the open point from the broker materialization: a transactional send works with the
+single-node settings (=transaction.state.log.replication.factor=1=, =min.isr=1=); =__transaction_state= was
+created on first use and =kafka-transactions.sh list= shows both producers in =CompleteCommit=.
+
+Caution: one process, loopback, one partition, no TLS or Kerberos. The numbers show the order of magnitude,
+not a benchmark. The consumer loops are one-record-at-a-time Python and could be faster for both.
+
+* Recommendation
+
+*Decided (2026-10-14): =confluent-kafka=, pinned, for =kafkaFileTransfer.py=.*
+
+1) Transactions are the load-bearing requirement, and =librdkafka= has the most mature implementation; it
+   passed our test.
+2) Throughput has headroom to spare: 432k records/s against ~10k/s needed. =kafka-python= 3.x did pass the
+   same test, but at 17.7k records/s it leaves only about 2x headroom for a driver that also does other work.
+3) =kafka-python= 3.x is new (a refactor released in 2026); 2.0.x, still pinned by a lot of older
+   code, cannot be imported on current Python. There is no stable baseline to match.
+4) It installs with pipx from a prebuilt wheel (=manylinux_2_28=, x86_64 and aarch64), with no compiler. It installed that way here.
+
+How to keep this decision cheap to change: =kafkaFileTransfer.py= imports only the client and keeps its use
+behind a small internal interface (begin, send, commit, abort; subscribe, poll). The client is then
+swappable without touching the file model or the =.cs= commands.
+
+* Kerberos: Building confluent-kafka from Source on Debian
+
+Tested 2026-10-14 on Debian 13 (trixie), Python 3.13. The stock wheel fails when asked for Kerberos:
+=No provider for SASL mechanism GSSAPI ... Current build options: PLAIN SASL_SCRAM OAUTHBEARER=. The fix
+is to have =librdkafka= built with Cyrus SASL (it then uses the system =libsasl2= and its GSSAPI plugin)
+and to build the Python binding against that library instead of the wheel's bundled one. Two ways:
+
+- *Route A: Debian's librdkafka.* =apt install librdkafka-dev libsasl2-dev libsasl2-modules-gssapi-mit
+  krb5-user=, then =pip install --no-binary confluent-kafka confluent-kafka==2.8.0=. The binding needs a
+  librdkafka at least as new as itself, and trixie has 2.8.0, so the binding is pinned to 2.8.0.
+  /Result/: built, GSSAPI available. The version is tied to the Debian release (bookworm has an older one)
+  but library fixes arrive through apt.
+- *Route B: librdkafka built from source.* Pinned upstream tarball (=v2.16.0=),
+  =./configure --enable-gssapi=, =make install= under =/opt=, then =pip install --no-binary confluent-kafka
+  confluent-kafka==2.16.0= with =C_INCLUDE_PATH=, =LIBRARY_PATH= and an rpath to it.
+  /Result/: built, GSSAPI available, binding and library both 2.16.0 on any Debian. We own patching the
+  library (TLS and SASL still come from the system libraries).
+
+Build prerequisites (both routes): =gcc=, =make=, =python3-dev=, and the =-dev= packages of =libsasl2=,
+=libssl=, =libzstd=, =liblz4=, =libcurl4-openssl=, =zlib1g=. Runtime: =libsasl2-modules-gssapi-mit= and
+=krb5-user= (for =kinit=). Route B's source tarball hashed to
+=e6b61de61d3282879a88e4ee3d9f634a8b05bf78a9198dfc25c4820c0c9ed231= (GitHub's archive of the tag; no
+upstream signature was checked).
+
+What was checked, on both routes: =ldd= shows the binding loading the intended =librdkafka= and =libsasl2=; a
+producer configured with =security.protocol=SASL_SSL=, =sasl.mechanisms=GSSAPI= and a keytab and principal is
+created, runs =kinit= and tries to connect (the failures seen are the expected "no KDC" and "connection refused");
+the transaction test of the previous section passes again on the source-built 2.16.0 at the same speed
+(444k records/s, aborted records invisible).
+
+A trap: a GSSAPI producer with /no/ keytab and principal is rejected with =Property not available:
+"sasl.kerberos.keytab"=, because the default =kinit= command refers to them. That is a configuration
+error, not a missing feature. Supply a keytab and principal (librdkafka then renews the ticket itself),
+or set =sasl.kerberos.kinit.cmd= to a command of your own.
+
+** A real Kerberos handshake: =tests/clientCompare/kerberosHandshakeTest.sh=
+
+The checks above only showed that a client starts, runs =kinit= and tries to connect. The script goes
+further, entirely on one host with nothing registered system-wide: a private MIT KDC on loopback
+(invented realm =KAFKATEST.LOCAL=) and a second, private Kafka node with one =SASL_SSL= listener (GSSAPI,
+self-signed certificate, the broker's own keytab). Each client authenticates with a keytab, commits 1,000
+records in one transaction and reads them back with =read_committed=. Two negative runs must fail: the keytab
+of a deleted principal, and a wrong service name. Needs =krb5-kdc=, =krb5-admin-server=, =krb5-user=,
+=openssl=, =keytool=; the clients' virtualenvs are given as arguments.
+
+| Client                                                    | Positive run | Negative runs   |
+|-----------------------------------------------------------+--------------+-----------------|
+| =confluent-kafka= 2.16.0 on librdkafka 2.16.0 (B)           | pass         | fail, as wanted |
+|-----------------------------------------------------------+--------------+-----------------|
+| =confluent-kafka= 2.8.0 on Debian's librdkafka (A)          | pass         | not run         |
+|-----------------------------------------------------------+--------------+-----------------|
+| =confluent-kafka= 2.16.0 built from the sbom's =build-env.sh= | pass         | fail, as wanted |
+|-----------------------------------------------------------+--------------+-----------------|
+| =kafka-python= 3.0.11 with =gssapi=                           | pass         | not run         |
+
+So both libraries do Kerberos with transactions, and the source-built binding is the same as the sbom's.
+
+Two traps the test found:
+
+1) *A dotless host name can silently change the realm.* With the bootstrap address =localhost= on a host whose
+   resolver has search domains, the client asked for =kafka/localhost.<search-domain>@<REALM-GUESSED-FROM-DOMAIN>=
+   and failed with =Server krbtgt/<other realm>@<ours> not found=, although =kinit= and =kvno= worked. =KRB5_TRACE=
+   showed it. Real brokers have FQDNs, but check what principal the client builds (=KRB5_TRACE=) before
+   blaming the KDC. The test uses an IP literal.
+2) *pip reuses cached wheels.* A =confluent-kafka= built earlier against another =librdkafka= was reused
+   silently and linked the wrong library. =build-env.sh= therefore sets =PIP_NO_CACHE_DIR=1=. Check with
+   =ldd= on =cimpl*.so= and =readelf -d= (RUNPATH should be =/opt/kafka/librdkafka/lib=).
+
+** In the sbom
+
+=kafka-sbom.pcs= now carries Route B: =kafkaInfo.py= pins =librdkafkaVersion=, =librdkafkaSha256= and
+=confluentKafkaVersion=; the sbom installs the build and Kerberos apt packages, then =librdkafkaSetup= downloads
+the tarball, verifies the SHA-256, builds with =--enable-gssapi= into =/opt/kafka/librdkafka-<version>=, refuses
+a result that does not link =libsasl2=, points =/opt/kafka/librdkafka= at it and writes =build-env.sh=. A consumer
+then does:
+
+#+begin_src bash
+. /opt/kafka/librdkafka/build-env.sh
+pip install confluent-kafka==2.16.0        # PIP_NO_BINARY and PIP_NO_CACHE_DIR come from build-env.sh
+#+end_src
+
+Run on a fresh library the build takes about 40 s; a second run skips it.
+
+* Open Points and Risks
+
+1) *Kerberos (GSSAPI).* Enterprise clusters commonly use SASL_SSL with GSSAPI. The wheel omits GSSAPI, but a
+   source build with the system =libsasl2= provides it (previous section), so this does not rule out
+   =confluent-kafka=; it adds a build step. Whether it is needed depends on the target cluster: with SCRAM,
+   OAUTHBEARER or TLS client certificates the wheel suffices.
+2) *Security modes tested:* PLAINTEXT, and SASL_SSL with GSSAPI against a local KDC. Not SCRAM, OAUTHBEARER or client certificates.
+3) *Not verified: =aiokafka=*, and Kerberos against any real (non-local) KDC.
+4) *Pin the version.* Whatever is chosen goes into =setup.py= =install_requires= (or a pipx extra) pinned to
+   a tested release, because both libraries release often.
+5) *Names decided (2026-10-14):* =kafkaFileSend.cs= and =kafkaFileReceive.cs=: producer and consumer clients, not
+   Kafka Connect connectors (see README.org, "Source and Sink"); two thin files over one csu.
