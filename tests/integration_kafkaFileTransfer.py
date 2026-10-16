@@ -206,6 +206,17 @@ def main():
     r = send("kfx-none", [work / "does-not-exist.txt"])
     check("send of a missing file exits non-zero", r.returncode != 0, f"rc={r.returncode}")
 
+    # 10. the "Try it" example: the demo file, sent with no --root, rebuilt under --outBase by its name ---------
+    from bisos.kafka import kafkaFileTransfer_csu as csu
+    t = newTopic("demo"); out7 = work / "out7"
+    r = send(t, [csu.demoFile], headers="host=h1")
+    check("Try it: send of the demo file", r.returncode == 0, (r.stdout + r.stderr)[-200:])
+    r = receive(t, out7, idle=int(csu.demoIdleExit))
+    check("Try it: rebuilt byte for byte under --outBase by its name",
+          (got := out7 / csu.demoFile.name).is_file() and got.read_bytes() == csu.demoFile.read_bytes(),
+          (r.stdout + r.stderr)[-200:])
+    dropTopic(t)
+
     failed = [n for n, ok in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed")
     sys.exit(1 if failed else 0)

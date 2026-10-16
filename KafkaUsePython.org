@@ -204,7 +204,8 @@ Two traps the test found:
 
 ** In the sbom
 
-=kafka-sbom.pcs= now carries Route B: =kafkaInfo.py= pins =librdkafkaVersion=, =librdkafkaSha256= and
+=kafkaUsage-sbom.pcs= carries Route B (it was in =kafka-sbom.pcs= until WorkPlan 2.7 split the usage side
+out; =kafka-cbs.pcs= runs both through =kafkaCbs-sbom.pcs=): =kafkaInfo.py= pins =librdkafkaVersion=, =librdkafkaSha256= and
 =confluentKafkaVersion=; the sbom installs the build and Kerberos apt packages, then =librdkafkaSetup= downloads
 the tarball, verifies the SHA-256, builds with =--enable-gssapi= into =/opt/kafka/librdkafka-<version>=, refuses
 a result that does not link =libsasl2=, points =/opt/kafka/librdkafka= at it and writes =build-env.sh=. A consumer

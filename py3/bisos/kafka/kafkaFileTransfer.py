@@ -438,7 +438,7 @@ def _client() -> typing.Any:
         import confluent_kafka
     except ImportError as problem:
         raise FileTransferError(
-            "confluent-kafka is not installed. For Kerberos, build it against the library kafka-sbom.pcs "
+            "confluent-kafka is not installed. For Kerberos, build it against the library kafkaUsage-sbom.pcs "
             "provides:  . /opt/kafka/librdkafka/build-env.sh ; pip install confluent-kafka") from problem
     return confluent_kafka
 

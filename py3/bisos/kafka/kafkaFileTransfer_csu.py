@@ -27,6 +27,7 @@ csInfo['status']  = 'inDev'
 import collections
 import pathlib
 import signal
+import socket
 import typing
 
 from bisos import b
@@ -88,10 +89,52 @@ def commonParamsSpecify(csParams: cs.param.CmndParamDict) -> None:
 #+end_org """
 ####+END:
 
+# The "Try it" pair: a small file every Debian host has, sent to this host's broker and rebuilt
+# under /tmp. Runs as shown, in either order (the receiver starts at the earliest offset; the
+# broker creates the topic on first send). Nothing in it names any consumer.
+demoFile = pathlib.Path("/etc/os-release")
+demoTopic = "kafkaFileDemo"
+demoGroup = "kafkaFileDemo"
+demoOutBase = pathlib.Path("/tmp/kafkaFileDemo")
+demoIdleExit = "10"
+
+
+def _demoBootstrap() -> str:
+    from bisos.kafka.kafkaInfo import kafkaInfo    # this host's broker, port from bisos.banna
+    return kafkaInfo.bootstrapServers
+
+
+def examples_tryIt(side: str) -> None:
+    """The runnable demo pair, shown first by both commands. side is "send" or "receive"."""
+    od = collections.OrderedDict
+    cmnd = cs.examples.cmndEnter
+    literal = cs.examples.execInsert
+    bootstrap = _demoBootstrap()
+
+    cs.examples.menuChapter(f'*Try it* -- send {demoFile} to this host\'s Kafka, rebuild it under {demoOutBase}')
+    sendPars = od([('bootstrap', bootstrap), ('topic', demoTopic), ('headers', f'host={socket.gethostname()}')])
+    receivePars = od([('bootstrap', bootstrap), ('topic', demoTopic), ('group', demoGroup),
+                      ('outBase', str(demoOutBase)), ('idleExit', demoIdleExit)])
+    if side == "send":
+        cmnd('fileSend', pars=sendPars, args=str(demoFile),
+             comment=" # one transaction; then run kafkaFileReceive.cs (its first example)")
+        literal(f"kafkaFileReceive.cs -i fileReceive --bootstrap={bootstrap} --topic={demoTopic} --group={demoGroup} "
+                f"--outBase={demoOutBase} --idleExit={demoIdleExit}")
+    else:
+        literal(f"kafkaFileSend.cs -i fileSend --bootstrap={bootstrap} --topic={demoTopic} "
+                f"--headers=host={socket.gethostname()} {demoFile}")
+        cmnd('fileReceive', pars=receivePars,
+             comment=f" # exits after {demoIdleExit} s idle; again with this group: nothing new to read")
+    literal(f"cmp {demoFile} {demoOutBase / demoFile.name} && echo identical   # a resend of it is skipped as a duplicate")
+    literal(f"rm -r {demoOutBase}")
+
+
 def examples_send() -> None:
     """Examples of fileSend, for kafkaFileSend.cs. Placeholders (<...>) are to be replaced."""
     od = collections.OrderedDict
     cmnd = cs.examples.cmndEnter
+
+    examples_tryIt("send")
 
     cs.examples.menuChapter('*fileSend* -- one transaction per file: headed records, plus kfx-bof / kfx-eof')
     cmnd('fileSend',
@@ -121,6 +164,8 @@ def examples_receive() -> None:
     """Examples of fileReceive, for kafkaFileReceive.cs. Placeholders (<...>) are to be replaced."""
     od = collections.OrderedDict
     cmnd = cs.examples.cmndEnter
+
+    examples_tryIt("receive")
 
     cs.examples.menuChapter('*fileReceive* -- rebuild the files that fileSend sent (read_committed)')
     cmnd('fileReceive',

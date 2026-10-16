@@ -9,8 +9,10 @@ ws: An Web Service  --- /Service Component/ --- Kafbat UI as kafka.here
 n:  No Data    -- Materialization is purely based on Realm-BPO
 p:  Platform    -- Materialization is based on Platform-BPO (Site-BPO is not used)
 
-The bundle: kafka-sbom.pcs (JRE, Kafka, Kafbat UI, config, storage format),
-the kafka and kafbat-ui units, and kafka-assemble.cs (kafka.here dns + nginx vhost).
+The bundle: kafkaCbs-sbom.pcs, which runs kafka-sbom.pcs (JRE, Kafka, Kafbat UI, config,
+storage format) and kafkaUsage-sbom.pcs (the Kerberos-capable librdkafka); the kafka and
+kafbat-ui units; and kafka-assemble.cs (kafka.here dns + nginx vhost).
+cba_seed takes one sbom, hence kafkaCbs-sbom.pcs rather than both names here.
 #+end_org """
 
 from bisos.capability import cba_sysd_seed
@@ -19,7 +21,7 @@ from bisos.capability import cba_seed
 cba_seed.setup(
     seedType="systemd",  # Extend using cba_sysd_seed.setup
     loader=None,
-    sbom="kafka-sbom.pcs",
+    sbom="kafkaCbs-sbom.pcs",
     assemble="kafka-assemble.cs",
     materialize=None,
 )

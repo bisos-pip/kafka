@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* Panel::  [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+kafkaUsage-sbom.pcs: software bill of materials of the usage side of the Kafka capability ---
+what a host needs to use a Kafka broker, local or remote, as opposed to run one.
+Today that is the pinned librdkafka, built from source with Kerberos (GSSAPI), and the
+apt packages to build it and to use Kerberos. It does not need the server: a host may use a
+broker on another host. kafka-sbom.pcs (the server) does not pull this sbom in;
+kafkaCbs-sbom.pcs, the sbom of kafka-cbs.pcs, runs both.
+#+end_org """
+
+from bisos import b
+from bisos.b import cs
+from bisos.b import b_io
+
+from bisos.sbom import pkgsSeed  # pkgsSeed.plantWithWhich("seedSbom.cs")
+from bisos.kafka.kafkaInfo import kafkaInfo, librdkafkaBuildEnvContent
+
+ap = pkgsSeed.aptPkg
+
+# Versions, checksum and paths come from bisos.kafka.kafkaInfo.
+# librdkafkaSetup is a func-bearing pseudo-package (see kafka-sbom.pcs): it runs on every
+# sbom_fullUpdate and must stay idempotent. Ordering in aptPkgsList is load-bearing.
+
+
+def _bash(script: str) -> b.op.Outcome:
+    outcome = b.subProc.WOpW(invedBy=None, log=1).bash(script)
+    if outcome.isProblematic():
+        b_io.eh.badOutcome(outcome)
+    return outcome
+
+
+def librdkafkaSetup():
+    """The pinned librdkafka, built from source with Kerberos (GSSAPI). Not an apt package.
+
+    The PyPI wheels of confluent-kafka omit GSSAPI, so a consumer that must talk to a
+    Kerberos cluster builds the binding against this library (build-env.sh). Built once per
+    version into installBase/librdkafka-<version>, root-owned; installBase/librdkafka points
+    at it. A tarball whose SHA-256 does not match kafkaInfo.librdkafkaSha256 is discarded.
+    The build is refused unless the result links libsasl2: a library without it would
+    install cleanly and fail only when a GSSAPI client first connects.
+    """
+    return _bash(f"""
+set -e
+sudo mkdir -p {kafkaInfo.installBase}
+if [ ! -f {kafkaInfo.librdkafkaDir}/lib/librdkafka.so.1 ] ; then
+    tmpDir=$(mktemp -d)
+    trap 'rm -rf "$tmpDir"' EXIT
+    curl -fsSL -o "$tmpDir/librdkafka.tgz" {kafkaInfo.librdkafkaUrl}
+    echo "{kafkaInfo.librdkafkaSha256}  $tmpDir/librdkafka.tgz" | sha256sum -c --quiet -
+    tar -xzf "$tmpDir/librdkafka.tgz" -C "$tmpDir"
+    ( cd "$tmpDir/librdkafka-{kafkaInfo.librdkafkaVersion}" \\
+        && ./configure --prefix={kafkaInfo.librdkafkaDir} --enable-gssapi >/dev/null \\
+        && make -j"$(nproc)" >/dev/null \\
+        && sudo make install >/dev/null )
+fi
+grep -q libsasl2 {kafkaInfo.librdkafkaDir}/lib/pkgconfig/rdkafka.pc \\
+    || {{ echo "librdkafka was built without libsasl2: no Kerberos" >&2; exit 1; }}
+
+sudo ln -sfn {kafkaInfo.librdkafkaDir} {kafkaInfo.librdkafkaHome}
+sudo tee {kafkaInfo.librdkafkaBuildEnvFile} >/dev/null <<'RDK_ENV_EOF'
+{librdkafkaBuildEnvContent()}RDK_ENV_EOF
+""")
+
+
+aptPkgsList = [
+    ap("curl"),                                            # Fetches the librdkafka tarball
+    *[ap(pkg) for pkg in kafkaInfo.clientBuildPkgs],       # to build librdkafka and the binding
+    *[ap(pkg) for pkg in kafkaInfo.clientKerberosPkgs],    # Kerberos at run time: kinit, GSSAPI plugin
+    ap("librdkafkaSetup", func=librdkafkaSetup),           # after curl and the build deps
+]
+
+# No pip packages: Python clients (confluent-kafka, kafka-python, ...) install into each
+# consumer's own virtenv, through that consumer's sbom. librdkafkaSetup only supplies the
+# Kerberos-capable C library they can build against (build-env.sh); see KafkaUsePython.org.
+
+pkgsSeed.setup(
+    aptPkgsList=aptPkgsList,
+)
+
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "readme" :extent "verify" :comment "Describe" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<readme>>  *Describe*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class readme(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Describe"""
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        descriptionStr = f"""\
+** Scope: the usage side of the Kafka capability -- what a host needs to use a Kafka
+   broker (this host's or another's), not to run one. Part of bisos.kafka.
+
+** What this installs:
+  1) apt packages: curl; to build with: {", ".join(kafkaInfo.clientBuildPkgs)};
+     to use Kerberos: {", ".join(kafkaInfo.clientKerberosPkgs)}.
+  2) librdkafkaSetup: librdkafka {kafkaInfo.librdkafkaVersion} from {kafkaInfo.librdkafkaUrl}
+     verified by SHA-256, built with Kerberos (GSSAPI) into {kafkaInfo.librdkafkaDir},
+     with {kafkaInfo.librdkafkaHome} pointing at it, and {kafkaInfo.librdkafkaBuildEnvFile}.
+
+** Standalone: this sbom does not need the server. kafka-sbom.pcs does not pull it in;
+   kafka-cbs.pcs runs both, through kafkaCbs-sbom.pcs.
+
+** What this does NOT do:
+  - It installs no Python client libraries; those belong to each consumer's virtenv. The
+    PyPI wheels of confluent-kafka have no Kerberos, so build the binding against this library:
+         . {kafkaInfo.librdkafkaHome}/build-env.sh
+         pip install --no-binary confluent-kafka confluent-kafka=={kafkaInfo.confluentKafkaVersion}
+    kafkaFileSend.cs and kafkaFileReceive.cs need it in the venv they run from.
+
+       kafkaUsage-sbom.pcs -i sbom_fullUpdate\
+"""
+        print(descriptionStr)
+
+        return cmndOutcome.set(
+            opError=b.op.OpError.Success,
+            opResults=None,
+        )
+
+
+def examples_csu() -> b.op.Outcome:
+    """Common Usage Examples for this Command-Service Unit"""
+
+    cmnd = cs.examples.cmndEnter
+    literal = cs.examples.execInsert
+
+    cmndOutcome = b.op.Outcome()
+
+    cs.examples.menuChapter('*Kafka Usage -- sbom Examples*')
+    cmnd('readme', comment=" # An overview short description")
+
+    cs.examples.menuChapter('*Installation*')
+    literal("kafkaUsage-sbom.pcs -i sbom_fullUpdate")
+
+    cs.examples.menuChapter('*Verify Installation*')
+    literal(f"ls -l {kafkaInfo.librdkafkaHome}")
+    literal(f"grep libsasl2 {kafkaInfo.librdkafkaDir}/lib/pkgconfig/rdkafka.pc   # built with Kerberos")
+    literal(f"cat {kafkaInfo.librdkafkaBuildEnvFile}")
+
+    cs.examples.menuChapter('*End-Of Kafka Usage -- sbom Examples*')
+    return cmndOutcome

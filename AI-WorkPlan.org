@@ -45,6 +45,7 @@ Prompt the user to confirm that the desired/appropriate model (/model) is being 
 Since this is to be repeated, leave the todo tag as LOOP.
 ** -
 
+
 * Stage 1: Convert this bisos.kafka which is a copy of bisos.postgres into a real starting point for bisos.kafka
 
 Goal: Look at ../postgres and ../airflow as examples of how BISOS CBMs are structured.
@@ -203,6 +204,7 @@ is reserved for one).
 - *Test target*: our own single-node Kafka (2.3). Other clusters differ only in
   connection settings.
 
+
 * Stage 2 TODOs
 ** +
 ** DONE [#A] <<2.1>> Choose the Kafka client library :aiAndMe:
@@ -231,7 +233,7 @@ librdkafka/wheel implications for pipx installs.
   consumer that ignores files sees plain rows. Contents, declared vs observed, =idHeaders=, =eol= and
   the receiver rules are in "The concept" above. A control topic can be added later if a consumer wants it.
 
-** TODO [#A] <<2.3>> Materialize =bisos.kafka= on this host, ready for transactions :aiAndMe:
+** WAIT [#A] <<2.3>> Materialize =bisos.kafka= on this host, ready for transactions :aiAndMe:
 Per Stage 1: kafka-sbom.pcs -i sbom_fullUpdate / kafka-cbs.pcs -i cbs_materialize
 had not been run on any host; on 2026-10-12 there was no kafka unit here and
 nothing on 9092. Needs sudo: the user's call (done 2026-10-14, see Results).
@@ -302,6 +304,57 @@ automated checks to tests/ where they can run without a broker.
 - NOT tested: SASL/Kerberos through these commands (clientConf is passed to librdkafka unchanged; the handshake
   itself was tested separately), very large files, an external Kafka cluster, a sender and receiver on different
   hosts, long-running receive (hours) with rebalances.
+
+** DONE [#A] <<2.7>> Split kafka-sbom.pcs to  kafkaUsage-sbom.pcs :aiAndMe:
+For bisos packages that implement CBMs. We should lean towards two -sbom.pcs
+One for the service and for the  usage of the service.
+Perhaps this general concept can be captured in the relevant skills.
+For Kafka  all the conflent related stuff should go in kafkaUsage-sbom.pcs.
+This was similarly done with airflow.
+----- Results: ------
+- 2026-10-15. Decided with the user: the server sbom does NOT pull in the usage sbom (materializing only the
+  server is normal); the CBS does both; the term is "Usage", not "Client"; confluent-kafka is still not installed
+  by any sbom; the concept goes into the cbm-authorship skill. Finding: airflow was never split (one
+  airflow-sbom.pcs; "airflowUsage" there is a panel). The nearest precedent is bisos.postgres's dbClients-sbom.pcs.
+- py3/bin/kafka-sbom.pcs: the server only (JRE, curl, account, dist, conf + storage, Kafbat UI).
+- py3/bin/kafkaUsage-sbom.pcs (new): curl, kafkaInfo.clientBuildPkgs, clientKerberosPkgs, librdkafkaSetup (moved
+  unchanged, plus mkdir -p /opt/kafka so it stands alone on a host without the server).
+- py3/bin/kafkaCbs-sbom.pcs (new): no packages; sbomsList = kafka-sbom.pcs, then kafkaUsage-sbom.pcs (by the path of
+  its own directory, as dbClients-sbom.pcs does). kafka-cbs.pcs now names it: cba_seed.setup(sbom=...) takes one
+  string, so a CBS cannot list two sboms. Recorded in AI-Outputs.org (WORKAROUND, :REPO: capability: let sbom be a
+  list, then retire the bundle) together with a second finding (TODO, :REPO: sbom: sbomSpecs_fullUpdate carries on
+  after a failed sub-sbom and returns success).
+- cbm-authorship skill (bisos/defaults repo, ai-templates/bisos-pip/_skills): new section "Service and usage sboms".
+- References updated: README.org, KafkaUsePython.org, py3/tests/verify.sh, the error text in kafkaFileTransfer.py.
+- devbin symlinks for the two new .pcs made by hand (cbs_sbom runs the sbom by bare name, on PATH); setup.py's scripts
+  list picks them up on its next Blee regeneration.
+- Verified without sudo: the three readmes; aptPkgs_list of each (server 6, usage 13, nothing duplicated but curl);
+  kafkaCbs-sbom.pcs sbomSpecs_list lists both, in order; kafka-cbs.pcs names kafkaCbs-sbom.pcs; the moved bash passes
+  bash -n; pyflakes clean; the 26 unit tests pass. NOT run: sbom_fullUpdate of any of the three, cbs_materialize.
+- Left as is: kafkaInfo's clientBuildPkgs / clientKerberosPkgs keep their names (they are the packages to build a
+  Kafka client); rename to usage* if wanted.
+
+** DONE [#A] <<2.8>> Generic and  easy to use file for kafkaFileSend.pcs  :aiAndMe:
+Use an exisiting simple publicly available file such as /etc/os-release and on the
+receiving side put it on /tmp
+----- Results: ------
+- 2026-10-15 (the commands are .cs, not .pcs). Agreed: /tmp/kafkaFileDemo rather than /tmp itself (shared dir;
+  the receiver writes a temporary file beside its target; one rm -r cleans up); topic and group kafkaFileDemo.
+- kafkaFileTransfer_csu.py: demoFile (/etc/os-release), demoTopic, demoGroup, demoOutBase, demoIdleExit and
+  examples_tryIt(side), shown as the first chapter, "Try it", of both kafkaFileSend.cs and kafkaFileReceive.cs:
+  the send, the receive, cmp, rm -r. Bootstrap from kafkaInfo.bootstrapServers (banna port), the host header from
+  socket.gethostname(). The other examples keep their <placeholders>.
+- Run on this host exactly as shown: sent 10 records in one transaction; received, written 286 bytes; cmp identical; a
+  second receive with the same group read nothing; a resend was skipped as a duplicate. Topic, group and
+  /tmp/kafkaFileDemo then deleted, so a first try starts clean.
+- tests/integration_kafkaFileTransfer.py: case 10, the demo file sent with no --root and rebuilt by name (fresh topic
+  and dir, not the demo's). 19/19 checks pass.
+- README.org "Files Over Kafka": a "Try it" block with the same lines.
+- quickKafka.cs has no file-transfer section, so nothing added there.
+
+
+
+
 ** -
 
 

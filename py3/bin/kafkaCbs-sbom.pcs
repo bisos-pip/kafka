@@ -1,0 +1,96 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* Panel::  [[file:./py3/panels/bisos.kafka/_nodeBase_/fullUsagePanel-en.org]]
+* Overview and Relevant Pointers
+kafkaCbs-sbom.pcs: the sbom of kafka-cbs.pcs. It installs nothing of its own; its sbomsList
+runs kafka-sbom.pcs (the server) and then kafkaUsage-sbom.pcs (the usage side).
+It exists because a CBS names one sbom (cba_seed.setup(sbom=...) takes a single string),
+while the server and usage sboms are kept apart so that either can be materialized alone.
+Retire it if cba_seed ever accepts a list of sboms (recorded in AI-Outputs.org).
+#+end_org """
+
+import pathlib
+
+from bisos import b
+from bisos.b import cs
+from bisos.b import b_io
+
+from bisos.sbom import pkgsSeed  # pkgsSeed.plantWithWhich("seedSbom.cs")
+
+sbom = pkgsSeed.sbomSpec
+
+# A sub-sbom is run as `<name> -i sbom_fullUpdate` by bare shell command. Naming it by the path of
+# the directory this file is in does not depend on the package being installed or on PATH.
+_binDir = pathlib.Path(__file__).resolve().parent
+
+# Order is load-bearing only by convention: the server first, then its usage. Neither needs the other.
+sbomsList = [
+    sbom(str(_binDir / "kafka-sbom.pcs")),
+    sbom(str(_binDir / "kafkaUsage-sbom.pcs")),
+]
+
+pkgsSeed.setup(
+    sbomsList=sbomsList,
+)
+
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "readme" :extent "verify" :comment "Describe" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<readme>>  *Describe*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class readme(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Describe"""
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        descriptionStr = """\
+** Scope: the sbom of kafka-cbs.pcs -- the server and the usage side of the Kafka
+   capability together. Part of bisos.kafka.
+
+** What this installs: nothing of its own. Through sbomsList, in order:
+  1) kafka-sbom.pcs        the server: JRE, Kafka, Kafbat UI, account, config, storage format.
+  2) kafkaUsage-sbom.pcs   the usage side: the Kerberos-capable librdkafka and its build deps.
+
+** Why a separate file: a CBS names one sbom, and the server sbom does not pull in the usage
+   sbom, so that either can be materialized alone:
+       kafka-sbom.pcs -i sbom_fullUpdate         # the server only
+       kafkaUsage-sbom.pcs -i sbom_fullUpdate    # the usage side only (no local broker)
+
+       kafkaCbs-sbom.pcs -i sbom_fullUpdate      # both; what kafka-cbs.pcs runs\
+"""
+        print(descriptionStr)
+
+        return cmndOutcome.set(
+            opError=b.op.OpError.Success,
+            opResults=None,
+        )
+
+
+def examples_csu() -> b.op.Outcome:
+    """Common Usage Examples for this Command-Service Unit"""
+
+    cmnd = cs.examples.cmndEnter
+    literal = cs.examples.execInsert
+
+    cmndOutcome = b.op.Outcome()
+
+    cs.examples.menuChapter('*Kafka CBS -- sbom Examples*')
+    cmnd('readme', comment=" # An overview short description")
+
+    cs.examples.menuChapter('*Installation*')
+    literal("kafkaCbs-sbom.pcs -i sbom_fullUpdate")
+
+    cs.examples.menuChapter('*End-Of Kafka CBS -- sbom Examples*')
+    return cmndOutcome

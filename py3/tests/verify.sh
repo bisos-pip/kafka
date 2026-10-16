@@ -35,6 +35,8 @@ lpDo ../bin/quickKafka.cs -i examples
 # --- planted files: menus and read-only Cmnds ---
 
 lpDo ../bin/kafka-sbom.pcs -i readme
+lpDo ../bin/kafkaUsage-sbom.pcs -i readme
+lpDo ../bin/kafkaCbs-sbom.pcs -i readme
 lpDo ../bin/kafka-sysd.pcs
 lpDo ../bin/kafbat-ui-sysd.pcs
 lpDo ../bin/kafka-cbs.pcs

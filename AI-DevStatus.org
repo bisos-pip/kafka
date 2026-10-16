@@ -40,6 +40,10 @@ Last updated: 2026-10-14 (end of Stage 2: Kafka materialized on one host; file t
     and 2.2 are DONE; 2.3-2.6 have Results and wait for the user's /bx-done.
   - Client library: =confluent-kafka= (chosen on measurement, accepted by the user), against a pinned
     =librdkafka= that kafka-sbom.pcs builds with Kerberos (GSSAPI), because the PyPI wheels have none.
+  - bisos.kafka is one of the three models of the cbm-package-authorship skill (2026-10-15; skill under
+    /bisos/git/bxRepos/bisos/defaults/ai-templates/bisos-pip/_skills/, with tools that scaffold from and
+    generate .cs files from this repo's kafkaAdmin.cs). Its siblings bisos.prometheus and bisos.grafana
+    were created in this session; their own AI-DevStatus.org files are authoritative for them.
   - HTTPS and a login for Kafbat UI are not in this repo's scope yet: certificates are designed
     across packages (bisos.crypt README.org, "BISOS Certificates --- Umbrella Design"; plan in
     pals/palsWithBcm README.org 1.4 and 1.8). Kafbat stays loopback-only until then.
@@ -64,12 +68,13 @@ Last updated: 2026-10-14 (end of Stage 2: Kafka materialized on one host; file t
     | /etc/kafka/server.properties, /etc/default/kafka{,bat-ui} | root:kafka 640 |
     | /var/lib/kafka/data (KRaft meta + partitions), /var/log/kafka | kafka 750/755 |
   - =py3/bin/=:
-    - kafka-cbs.pcs (CBS: sbom + units [kafka, kafbat-ui] + kafka-assemble.cs)
+    - kafka-cbs.pcs (CBS: kafkaCbs-sbom.pcs + units [kafka, kafbat-ui] + kafka-assemble.cs)
     - cbmProc-kafka.spcs (CBM pointer; leaf sys/cbm/collective/hereWeb/kafka/)
-    - kafka-sbom.pcs: apt openjdk-25-jre-headless + curl + build and Kerberos packages, then func-bearing
-      pseudo-pkgs kafkaAcctSetup, kafkaDistSetup, kafkaConfSetup (writes configs only when absent; formats
-      storage only when meta.properties absent), kafbatUiSetup, librdkafkaSetup (pinned build with GSSAPI,
-      refused unless it links libsasl2). All idempotent; the second run skips the librdkafka build.
+    - Three sboms (WorkPlan 2.7, 2026-10-15). kafka-sbom.pcs, the server only: apt openjdk-25-jre-headless + curl,
+      then func-bearing pseudo-pkgs kafkaAcctSetup, kafkaDistSetup, kafkaConfSetup (writes configs only when
+      absent; formats storage only when meta.properties absent), kafbatUiSetup. kafkaUsage-sbom.pcs, the usage
+      side: curl + build and Kerberos packages, then librdkafkaSetup (pinned build with GSSAPI, refused unless it
+      links libsasl2). kafkaCbs-sbom.pcs: no packages, sbomsList = the two, for the CBS. All idempotent.
     - kafka-sysd.pcs, kafbat-ui-sysd.pcs (both User=kafka, EnvironmentFile=...)
     - kafka-here-dns.pcs, kafka-wvd.pcs, kafka-assemble.cs (hereDns + webVirtDom)
     - kafkaAdmin.cs (hostInfo, servicesInfo, topicsInfo, consumerGroupsInfo, driftCheck, fullUpdate),
@@ -78,7 +83,7 @@ Last updated: 2026-10-14 (end of Stage 2: Kafka materialized on one host; file t
   - =py3/bisos/kafka/kafkaFileTransfer.py= --- pure logic (records from a file, FileAssembler, path checks,
     atomic placement, the thin confluent-kafka layer; the client is imported lazily).
     =kafkaFileTransfer_csu.py= --- the Cmnds fileSend and fileReceive and their examples.
-  - =tests/=: test_kafkaFileTransfer.py (26 unit tests, no broker), integration_kafkaFileTransfer.py (17 checks
+  - =tests/=: test_kafkaFileTransfer.py (26 unit tests, no broker), integration_kafkaFileTransfer.py (19 checks
     through the real commands against this host's broker, about 3 minutes), clientCompare/ (client
     comparison and kerberosHandshakeTest.sh with a private KDC and broker), =py3/tests/verify.sh= (smoke test).
   - Ports (bisos.banna tcpPorts.py): kafka=24007 broker, kafkaController=24008,
@@ -94,7 +99,8 @@ Last updated: 2026-10-14 (end of Stage 2: Kafka materialized on one host; file t
   - Kerberos: a real SASL_SSL + GSSAPI handshake against a private local KDC and broker, for confluent-kafka
     (Debian's librdkafka, and the pinned build the sbom makes) and for kafka-python 3.0.11 + gssapi;
     negative cases (deleted principal, wrong service name) fail as they should.
-  - File transfer: 26 unit and 17 integration tests pass. Covered: a hierarchy rebuilt byte for byte; duplicate
+  - File transfer: 26 unit and 19 integration tests pass (2026-10-15). A "Try it" pair (/etc/os-release to
+    /tmp/kafkaFileDemo, WorkPlan 2.8) heads both commands' menus and was run as shown. Covered: a hierarchy rebuilt byte for byte; duplicate
     delivery skipped; a rows-only consumer sees plain headed rows; records mode; 8 concurrent senders into one
     partition demultiplexed; a file changed mid-send aborted; a sender killed mid-transaction never visible; a
     hostile path rejected without stopping the stream; exit status non-zero on failure. A mutation check
@@ -120,7 +126,11 @@ Last updated: 2026-10-14 (end of Stage 2: Kafka materialized on one host; file t
     The two file-transfer .cs and the _csu were written in generated form by hand and refresh on first Blee open.
     All fixed by a Blee dblock update.
   - devbin symlinks for kafkaFileSend.cs / kafkaFileReceive.cs were made by hand; the regenerated setup.py now
-    covers them on reinstall.
+    covers them on reinstall. Same for kafkaUsage-sbom.pcs / kafkaCbs-sbom.pcs (2026-10-15), but setup.py does not
+    list them yet: regenerate it in Blee. Until then cbs_sbom on a fresh install cannot find kafkaCbs-sbom.pcs.
+  - The three sboms have not been run since the split (2.7): kafkaCbs-sbom.pcs -i sbom_fullUpdate (or
+    cbs_materialize) on this host should be a no-op; kafkaUsage-sbom.pcs alone on a host without the server is
+    the case the split is for.
   - Do NOT put py3/ itself on PYTHONPATH: py3/bisos/__init__.py (pkg_resources declare_namespace) shadows the
     native bisos namespace and breaks every bisos import. bisos.kafka is editable-installed in bisos3.
 
@@ -129,6 +139,12 @@ Last updated: 2026-10-14 (end of Stage 2: Kafka materialized on one host; file t
     every consumer-specific value (topic, key, headers, identity headers, output path, security settings) is a
     parameter; a consumer's repository supplies them. Test data and docs use neutral names.
   - hereWeb (like airflow), not bedrock (like postgres): kafka has a web UI at kafka.here.
+  - *Service and usage sboms* (user, 2026-10-15; WorkPlan 2.7): kafka-sbom.pcs (server) does NOT pull in
+    kafkaUsage-sbom.pcs; the CBS does both, through kafkaCbs-sbom.pcs, because cba_seed.setup(sbom=...) takes one
+    string. "Usage", not "Client". Out of chain: the general rule is in the cbm-authorship skill
+    (/bisos/git/bxRepos/bisos/defaults/ai-templates/bisos-pip/_skills/, under git); the framework limit and a
+    second finding (sbomSpecs_fullUpdate carries on after a failed sub-sbom) are in AI-Outputs.org (blee-binders,
+    under git). Actionable when cba_seed accepts a list: retire kafkaCbs-sbom.pcs.
   - Upstream binaries, pinned + checksummed, in kafkaInfo: Debian packages neither Kafka
     nor Kafbat UI. Bumping a version means bumping its checksum; a mismatch aborts the sbom.
     Fetched from archive.apache.org (downloads.apache.org keeps only recent releases).

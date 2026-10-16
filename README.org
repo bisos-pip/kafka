@@ -471,17 +471,19 @@ The following commands are made available:
 - =kafka-assemble.cs= --- assembly step: =kafka.here= dns entry and nginx vhost.
 - =cbmProc-kafka.spcs= --- planted CBM pointer that materializes the CBS at this host.
 
-The planted =.pcs= files (=kafka-cbs.pcs=, =kafka-sbom.pcs=, =kafka-sysd.pcs=,
-=kafbat-ui-sysd.pcs=, =kafka-here-dns.pcs=, =kafka-wvd.pcs=) are invoked
-directly from =py3/bin/=.
+The planted =.pcs= files (=kafka-cbs.pcs=, =kafka-sbom.pcs=, =kafkaUsage-sbom.pcs=,
+=kafkaCbs-sbom.pcs=, =kafka-sysd.pcs=, =kafbat-ui-sysd.pcs=, =kafka-here-dns.pcs=,
+=kafka-wvd.pcs=) are invoked directly from =py3/bin/=.
 
 * Usage
 
 ** Materialization
 
 #+begin_src bash
-kafka-sbom.pcs -i sbom_fullUpdate                    # install only
-kafka-cbs.pcs -i cbs_materialize                     # sbom + units + assemble
+kafka-sbom.pcs -i sbom_fullUpdate                    # install the server only
+kafkaUsage-sbom.pcs -i sbom_fullUpdate               # install the usage side only (Kerberos-capable librdkafka)
+kafkaCbs-sbom.pcs -i sbom_fullUpdate                 # install both
+kafka-cbs.pcs -i cbs_materialize                     # both sboms + units + assemble
 cbmProc-kafka.spcs -i cbm_enable                     # at the planted CBM leaf, then:
 cbmProc-kafka.spcs -i cbm_materialize
 #+end_src
@@ -514,8 +516,23 @@ quickKafka.cs
 Two commands, generic and optional, that carry files through Kafka and, if wished, rebuild them. They
 are ordinary Kafka clients (a producer and a consumer), not Kafka Connect connectors, and they know nothing
 about any particular consumer: topic, key, headers, identity headers and output paths are all parameters.
-Needs the Python package =confluent-kafka= (for Kerberos, built against the library =kafka-sbom.pcs=
+Needs the Python package =confluent-kafka= (for Kerberos, built against the library =kafkaUsage-sbom.pcs=
 provides; see [[file:KafkaUsePython.org][KafkaUsePython.org]]).
+
+*Try it.* Against this host's broker, with a file every host has; runs as shown, in either order (the
+receiver starts at the earliest offset, and the broker creates the topic on first send). Both commands show
+these lines first in their menus.
+
+#+begin_src bash
+kafkaFileSend.cs -i fileSend --bootstrap=127.0.0.1:24007 --topic=kafkaFileDemo --headers=host=$(hostname) /etc/os-release
+kafkaFileReceive.cs -i fileReceive --bootstrap=127.0.0.1:24007 --topic=kafkaFileDemo --group=kafkaFileDemo \
+    --outBase=/tmp/kafkaFileDemo --idleExit=10
+cmp /etc/os-release /tmp/kafkaFileDemo/os-release && echo identical
+rm -r /tmp/kafkaFileDemo
+#+end_src
+
+A second receive with the same group reads nothing new; a resend of an unchanged file is received as a
+duplicate and skipped.
 
 *Send.* Each file becomes one Kafka transaction; each line one record. The value is the line without its
 terminator, and every record carries the headers you give. A consumer that knows nothing about files reads
@@ -561,7 +578,9 @@ Stage 2. Tests: =tests/test_kafkaFileTransfer.py= (no broker) and =tests/integra
 - =py3/bisos/kafka/kafkaInfo.py= --- the single source of facts: pinned versions and checksums, paths, ports, and the generators of the three config files and the units' identity lines.
 - =py3/bin/kafka-cbs.pcs= --- CBS declaring the bundle (sbom + 2 sysd units + assemble).
 - =py3/bin/cbmProc-kafka.spcs= --- planted CBM pointer leaf that materializes the CBS.
-- =py3/bin/kafka-sbom.pcs= --- package installation via [[https://github.com/bisos-pip/sbom][bisos.sbom]]: the JRE from apt, then Kafka and Kafbat UI from upstream.
+- =py3/bin/kafka-sbom.pcs= --- the server's package installation via [[https://github.com/bisos-pip/sbom][bisos.sbom]]: the JRE from apt, then Kafka and Kafbat UI from upstream.
+- =py3/bin/kafkaUsage-sbom.pcs= --- the usage side, for a host that uses a broker (its own or another's): the pinned librdkafka built with Kerberos, and its build packages. The server sbom does not pull it in.
+- =py3/bin/kafkaCbs-sbom.pcs= --- the sbom of =kafka-cbs.pcs=: runs the two above. It exists because a CBS names one sbom.
 - =py3/bin/kafka-sysd.pcs=, =py3/bin/kafbat-ui-sysd.pcs= --- the two units.
 - =py3/bin/kafka-assemble.cs= --- assembly step (dns + vhost).
 - =py3/bin/kafka-here-dns.pcs= --- =.here= fake-domain DNS registration for =kafka.here=.
