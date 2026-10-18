@@ -130,7 +130,7 @@ Last updated: 2026-10-16 (Stage 2 complete through 2.8; all work committed, last
     scope is SQL generally). No sbom installs confluent-kafka. Finding: airflow was never split, despite the
     TODO's wording; postgres's dbClients-sbom.pcs was the nearest precedent.
   - Out of chain (all under git): the general CBM-package pattern is the cbm-package-authorship skill and the
-    sbom split is in cbm-authorship (/bisos/git/bxRepos/bisos/defaults/ai-templates/bisos-pip/_skills/).
+    sbom split is in cbm-authorship (/bisos/git/bxRepos/bisos/defaults/ai-templates/mother/_skills/).
     AI-Outputs.org (blee-binders/evolution) holds: cba_seed takes one sbom (WORKAROUND; retire
     kafkaCbs-sbom.pcs when it takes a list); sbomSpecs_fullUpdate carries on after a failed sub-sbom (TODO);
     the CBM-package helpers copied into every package (TODO; kvDrift/unitDrift here are among them).
